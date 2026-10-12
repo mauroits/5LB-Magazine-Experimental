@@ -6,6 +6,12 @@ import {VitePWA} from 'vite-plugin-pwa';
 
 export default defineConfig(() => {
   return {
+    // Rileva automaticamente il nome del repository su GitHub Pages,
+    // altrimenti usa la radice '/' per il dominio personalizzato o per il locale
+    base: process.env.GITHUB_REPOSITORY 
+      ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/` 
+      : '/',
+
     plugins: [
       react(),
       tailwindcss(),
