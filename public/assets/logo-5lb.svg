@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2005/svg" viewBox="0 0 1024 500" fill="none">
+  <!-- Stylized 5LB orange serif text matching Rivista-logo-1024x500-NoNeon.png -->
+  <defs>
+    <filter id="subtle" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000000" flood-opacity="0.15" />
+    </filter>
+  </defs>
+  <g filter="url(#subtle)">
+    <!-- 5LB text in exact serif rendering with baseline line -->
+    <text x="30" y="320" font-family="'Times New Roman', Times, 'Baskerville', 'Playfair Display', Georgia, serif" font-weight="bold" font-size="340" fill="#ff5522" letter-spacing="-2">
+      5LB
+    </text>
+    <!-- Baseline horizontal divider extending to the right -->
+    <line x1="160" y1="330" x2="1000" y2="330" stroke="#ff5522" stroke-width="4" stroke-opacity="0.35" />
+    <line x1="160" y1="330" x2="520" y2="330" stroke="#ff5522" stroke-width="5" />
+  </g>
+</svg>

@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* iOS Notch & Safe Area variables */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* Ensure body handles safe-area insets cleanly on iOS Safari & Standalone */
+html,
+body {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Blogger Article HTML Content Styling - Links & Lists */
+.article-content a,
+.article-content a * {
+  color: #ea580c !important; /* Tailwind orange-600 */
+  text-decoration: underline !important;
+  text-decoration-color: #ea580c !important;
+  text-underline-offset: 3px !important;
+  font-weight: 500 !important;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.dark .article-content a,
+.dark .article-content a * {
+  color: #fb923c !important; /* Tailwind orange-400 */
+  text-decoration-color: #fb923c !important;
+}
+
+.article-content a:hover,
+.article-content a:hover * {
+  color: #c2410c !important; /* Tailwind orange-700 */
+  text-decoration-color: #c2410c !important;
+}
+
+.dark .article-content a:hover,
+.dark .article-content a:hover * {
+  color: #fdba74 !important; /* Tailwind orange-300 */
+  text-decoration-color: #fdba74 !important;
+}
+
+.article-content a:has(img),
+.article-content a img {
+  text-decoration: none !important;
+}
+
+/* Ensure all nested lists & bullet points from Blogger render properly */
+.article-content ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.article-content ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.article-content li {
+  margin-top: 0.35rem !important;
+  margin-bottom: 0.35rem !important;
+}
+

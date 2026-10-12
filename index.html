@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>5LB Magazine</title>
+    <meta name="description" content="La rivista sulle 5 Leggi Biologiche - App ufficiale con feed RSS, risorse informative e formative." />
+    <meta property="og:title" content="5LB Magazine" />
+    <meta property="og:description" content="La rivista sulle 5 Leggi Biologiche - App ufficiale con feed RSS, risorse informative e formative." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#000836" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="5LB Magazine" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/logo-faviconBLU.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+
+    <!-- Google Consent Mode v2 & Google Analytics (gtag.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+
+      var savedConsent = null;
+      try {
+        var raw = localStorage.getItem('5lb_cookie_consent_v1');
+        if (raw) savedConsent = JSON.parse(raw);
+      } catch(e) {}
+
+      var isAccepted = (savedConsent && savedConsent.analytics === true);
+
+      // Default standard Consent Mode v2: 'denied' finché l'utente non accetta
+      gtag('consent', 'default', {
+        'analytics_storage': isAccepted ? 'granted' : 'denied',
+        'ad_storage': 'denied',
+        'ad_user_data': 'denied',
+        'ad_personalization': 'denied'
+      });
+
+      gtag('js', new Date());
+      gtag('config', 'G-F8YBSNXCDW', {
+        'anonymize_ip': true
+      });
+    </script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8YBSNXCDW"></script>
+  </head>
+  <body class="bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-orange-500 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

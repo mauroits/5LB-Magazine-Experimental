@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2005/svg" viewBox="0 0 1024 320" fill="none">
+  <g>
+    <!-- 5LB logo -->
+    <text x="10" y="220" font-family="'Times New Roman', Times, 'Playfair Display', Georgia, serif" font-weight="bold" font-size="240" fill="#ff5522" letter-spacing="-2">
+      5LB
+    </text>
+    <!-- Magazine in white -->
+    <text x="490" y="215" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="140" fill="#ffffff" letter-spacing="1">
+      Magazine
+    </text>
+    <!-- Baseline bar -->
+    <line x1="130" y1="235" x2="1000" y2="235" stroke="#ffffff" stroke-width="3" stroke-opacity="0.3" />
+    <line x1="130" y1="235" x2="490" y2="235" stroke="#ff5522" stroke-width="4" />
+    <!-- Subtitle -->
+    <text x="135" y="280" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="400" font-size="38" fill="#cbd5e1" letter-spacing="0.5">
+      La rivista sulle 5 Leggi Biologiche
+    </text>
+  </g>
+</svg>
