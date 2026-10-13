@@ -74,9 +74,6 @@ export const ArchiveBadgeButton: React.FC<ArchiveBadgeButtonProps> = ({
       className="relative group p-2 rounded-xl transition-all duration-200 cursor-pointer border border-orange-200 dark:border-orange-800/80 bg-orange-50 dark:bg-orange-950/40 text-orange-600 dark:text-orange-400 flex items-center justify-center shadow-xs active:scale-95"
     >
       <Medal className="w-5 h-5 shrink-0 group-hover:scale-110 transition-transform" />
-      <span className="absolute -top-1.5 -right-1.5 text-[9px] font-bold rounded-full px-1 py-0.5 leading-none bg-orange-600 text-white shadow-xs ring-1 ring-white dark:ring-slate-900">
-        0/1
-      </span>
     </button>
   );
 };

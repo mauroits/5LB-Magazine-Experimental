@@ -23,7 +23,7 @@ import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
 import { AI_BANNER_CONFIG } from '../config/infoContent';
 import { ArchiveBadgeButton } from './BadgeIcon';
-import { getCurrentBadge, getNextBadge } from '../services/badgeService';
+import { getCurrentBadge } from '../services/badgeService';
 
 interface ArticleListProps {
   posts: BloggerPost[];
@@ -259,38 +259,14 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                     </button>
                   );
                 }
-                return (
-                  <button
-                    onClick={() => onOpenBadgesModal && onOpenBadgesModal()}
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800 cursor-pointer hover:scale-105 transition-transform"
-                    title="Clicca per visualizzare i badge"
-                  >
-                    Obiettivo 20 articoli
-                  </button>
-                );
+                return null;
               })()}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {displayedPosts.length} {displayedPosts.length === 1 ? 'articolo trovato' : 'articoli'}
-              {activeFilter.type === 'quick' && activeFilter.id === 'all' && (() => {
-                const next = getNextBadge(posts.length);
-                if (next) {
-                  return <span> • Prossimo traguardo a {next.threshold} ({next.threshold - posts.length} rimanenti)</span>;
-                }
-                return <span> • Massimo livello raggiunto!</span>;
-              })()}
               {sortMode === 'shuffle' ? ' • Casuale' : ' • Recenti'}
             </p>
           </div>
-
-          {(activeFilter.type === 'rss' || (activeFilter.type === 'quick' && activeFilter.id !== 'today')) && (
-            <button
-              onClick={onResetFilter}
-              className="ml-2 text-xs font-semibold text-orange-600 dark:text-orange-400 hover:underline cursor-pointer"
-            >
-              Torna alla home
-            </button>
-          )}
 
           {searchQuery?.trim() && (
             <div className="flex items-center gap-1.5 ml-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-950/80 text-orange-800 dark:text-orange-200 text-xs font-medium border border-orange-200 dark:border-orange-800">

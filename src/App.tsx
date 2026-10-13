@@ -65,6 +65,7 @@ import {
 import { NAV_SECTIONS, GOOGLE_NOTEBOOK_URL } from './config/navigation';
 import { openNotebookWithPriority } from './utils/notebookLauncher';
 import { useTheme } from './hooks/useTheme';
+import { useInterfaceZoom } from './hooks/useInterfaceZoom';
 import { Bell, ArrowRight, X } from 'lucide-react';
 
 interface CategoryFeedState {
@@ -92,6 +93,13 @@ function getArticlePath(post: BloggerPost): string {
 
 export default function App() {
   const { themeMode, cycleTheme } = useTheme();
+  const {
+    zoomLevel,
+    zoomIn,
+    zoomOut,
+    setZoom,
+    resetZoom,
+  } = useInterfaceZoom();
   const sections = NAV_SECTIONS;
 
   // Stale-While-Revalidate: Initialize immediately from cached articles for 0ms load
@@ -957,6 +965,11 @@ export default function App() {
         categoryCounts={categoryCounts}
         themeMode={themeMode}
         onCycleTheme={cycleTheme}
+        zoomLevel={zoomLevel}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+        onSetZoom={setZoom}
+        onResetZoom={resetZoom}
       />
 
       {/* Main Content Column (Header + Article Feed) */}

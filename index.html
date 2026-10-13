@@ -29,6 +29,18 @@
         window.__pwaDeferredPrompt = e;
         window.dispatchEvent(new CustomEvent('5lb:beforeinstallprompt', { detail: e }));
       });
+
+      // Restore saved interface zoom immediately to prevent layout shift on load
+      try {
+        var savedZoom = localStorage.getItem('5lb_interface_zoom_v1');
+        if (savedZoom) {
+          var parsedZoom = parseInt(savedZoom, 10);
+          if (!isNaN(parsedZoom) && parsedZoom >= 80 && parsedZoom <= 140) {
+            document.documentElement.style.fontSize = parsedZoom + '%';
+            document.documentElement.style.setProperty('--app-interface-zoom', (parsedZoom / 100).toString());
+          }
+        }
+      } catch (e) {}
     </script>
 
     <!-- Google Consent Mode v2 & Google Analytics (gtag.js) -->

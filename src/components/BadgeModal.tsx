@@ -208,7 +208,7 @@ export const BadgeModal: React.FC<BadgeModalProps> = ({
               Come collezionare più articoli e conoscenza?
             </h5>
             <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5 leading-relaxed">
-              Più navighi tra le diverse sezioni del menu (notizie, sintomi, apparati ed eziologie) e più utilizzi la ricerca interna per trovare argomenti specifici, più articoli vengono importati e memorizzati nel tuo archivio locale. Questo arricchisce la tua biblioteca biologica personale e sblocca i badge successivi!
+              Più navighi tra le diverse sezioni del menu (notizie, sintomi, apparati ed eziologie) e più utilizzi la ricerca interna per trovare argomenti specifici, più articoli vengono importati e memorizzati nel tuo archivio locale. Questo arricchisce la tua biblioteca 5LB personale e sblocca i badge successivi!
             </p>
           </div>
         </div>

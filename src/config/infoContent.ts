@@ -29,7 +29,7 @@ export const INFO_PAGE_CONTENT = {
       {
         title: 'Collezione Articoli & Badge di Conoscenza',
         description:
-          'Più navighi tra le diverse categorie ed eziologie e più cerchi all’interno dell’app, più collezioni articoli, conoscenza e varietà in "Il mio archivio". Raggiungendo i traguardi di 20, 80, 150, 250 e 350 articoli collezionati sblocchi esclusivi badge di livello, con notifiche dedicate e un’icona speciale mostrata sia nella pagina "Il mio archivio" che nella barra di navigazione.',
+          'Più navighi tra le diverse categorie ed eziologie e più cerchi all’interno dell’app, più collezioni articoli, conoscenza e varietà in "Il mio archivio". Raggiungendo i traguardi di 20, 80, 150, 250 e 350 articoli collezionati sblocchi un riconoscimento di livello. Ogni sblocco è notificato e avrai un’icona speciale nella pagina "Il mio archivio" e nella barra di navigazione.',
       },
       {
         title: 'Aggregatore di notizie & Archivio',
@@ -63,12 +63,9 @@ export const INFO_PAGE_CONTENT = {
         date: 'Ottobre 2026',
         isCurrent: true,
         notes: [
-          'Gestione notifiche: contrassegna come letta al clic e pulsante dedicato su ogni singola notifica per cambiare lo stato letto/non letto.',
-          'Navigazione sidebar: nuova icona archivio per "Il mio archivio", rimozione del conteggio a lato di "Accade oggi", icona e testo neri per "Accade oggi".',
-          'Ordinamento articoli: indicatore esplicito della parola "Recenti" quando gli articoli sono in ordine cronologico e "Casuale" con lo shuffle.',
-          'Sistema di badge di conoscenza sbloccabili a 20, 80, 150, 250 e 350 articoli collezionati in "Il mio archivio".',
-          'Notifica in tempo reale allo sblocco dei nuovi badge con finestra celebrativa e centro notifiche.',
-          'Icona speciale del badge visibile nella pagina "Il mio archivio" e nella barra di navigazione a fianco al numero di articoli.',
+          'Aggiunta pagina di notize quotidiane dal flusso social',
+          'Aggiunto sistema di livelli di studio e partecipazione',
+          'Varie sistemazioni grafiche',
         ],
       },
       {
@@ -76,20 +73,15 @@ export const INFO_PAGE_CONTENT = {
         date: 'Settembre 2026',
         isCurrent: false,
         notes: [
-          'Integrazione feed "Accade Oggi" con notizie e aggiornamenti flash dal canale Telegram @magazine5LB.',
-          'Supporto completo PWA con installazione rapida, sincronizzazione periodica e navigazione offline.',
-          'Integrazione assistente di ricerca semantica (NotebookLM).',
-          'Salvataggio preferiti ("Ti piace") e stato articoli letti in memoria locale.',
+          'Nuova versione completamente riscritta dalle fondamenta, compatibile con qualunque dispositivo Android, iOS e altri che supportino le Progressive Web App',,
         ],
       },
       {
         version: '1.0.0',
-        date: 'Agosto 2026',
+        date: 'Febbraio 2016',
         isCurrent: false,
         notes: [
-          'Lancio iniziale della Web App 5LB Magazine.',
-          'Consultazione feed RSS con categorizzazione per sezioni tematiche ed Eziologia.',
-          'Supporto tema chiaro/scuro e layout responsive ottimizzato per smartphone, tablet e desktop.',
+          'Prima versione Android pubblicata nel lontano 2016, giunta nel 2023 alla versione 1.7',
         ],
       },
     ],

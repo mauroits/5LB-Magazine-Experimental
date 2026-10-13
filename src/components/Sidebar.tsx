@@ -45,6 +45,7 @@ import { ThemeMode } from '../hooks/useTheme';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { openExternalBrowser } from '../utils/browserLauncher';
 import { BadgeNavPill } from './BadgeIcon';
+import { InterfaceZoomControl } from './InterfaceZoomControl';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -65,6 +66,11 @@ interface SidebarProps {
   categoryCounts: Record<string, number>;
   themeMode: ThemeMode;
   onCycleTheme: () => void;
+  zoomLevel: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onSetZoom: (level: number) => void;
+  onResetZoom: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -86,6 +92,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   categoryCounts,
   themeMode,
   onCycleTheme,
+  zoomLevel,
+  onZoomIn,
+  onZoomOut,
+  onSetZoom,
+  onResetZoom,
 }) => {
   // Collapsed / Expanded states for macrosections (INFORMAZIONE is open by default)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
@@ -320,7 +331,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {renderIcon(f.icon)}
                     </span>
                     <span
-                      className={`text-[15px] font-medium ${
+                      className={`text-[0.9375rem] font-medium ${
                         f.id === 'filter-accade-oggi'
                           ? 'text-black dark:text-white font-semibold'
                           : active
@@ -407,7 +418,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <span className="w-6 flex items-center justify-center shrink-0">
                               {renderIcon(item.iconName)}
                             </span>
-                            <span className="text-[14.5px] truncate font-medium group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+                            <span className="text-[0.90625rem] truncate font-medium group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
                               {item.label}
                             </span>
                           </div>
@@ -451,7 +462,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               title="Informazioni sull'App e Privacy"
             >
               <Info className="w-4 h-4 text-orange-500 shrink-0" />
-              <span className="truncate">Info & Privacy</span>
+              <span className="truncate">Info</span>
             </button>
 
             {onOpenCookieSettings && (
@@ -469,25 +480,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
 
-          <button
-            onClick={onCycleTheme}
-            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0"
-            title={
-              themeMode === 'system'
-                ? 'Tema: Sistema'
-                : themeMode === 'light'
-                ? 'Tema: Chiaro'
-                : 'Tema: Scuro'
-            }
-          >
-            {themeMode === 'system' ? (
-              <Monitor className="w-4 h-4" />
-            ) : themeMode === 'light' ? (
-              <Sun className="w-4 h-4 text-amber-500" />
-            ) : (
-              <Moon className="w-4 h-4 text-indigo-400" />
-            )}
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Regolazione Ingrandimento Interfaccia (Lente -/+) */}
+            <InterfaceZoomControl
+              zoomLevel={zoomLevel}
+              onZoomIn={onZoomIn}
+              onZoomOut={onZoomOut}
+              onSetZoom={onSetZoom}
+              onResetZoom={onResetZoom}
+            />
+
+            {/* Pulsante Tema (Chiaro / Scuro / Sistema) */}
+            <button
+              onClick={onCycleTheme}
+              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0"
+              title={
+                themeMode === 'system'
+                  ? 'Tema: Sistema'
+                  : themeMode === 'light'
+                  ? 'Tema: Chiaro'
+                  : 'Tema: Scuro'
+              }
+            >
+              {themeMode === 'system' ? (
+                <Monitor className="w-4 h-4" />
+              ) : themeMode === 'light' ? (
+                <Sun className="w-4 h-4 text-amber-500" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-400" />
+              )}
+            </button>
+          </div>
         </div>
       </aside>
     </>
