@@ -187,8 +187,8 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
             <span>
               {isAlreadyArchived
-                ? 'L’aggiornamento mantiene non contribuisce al livello del tuo archivio.'
-                : 'Ogni articolo scaricato ti avvicina al prossimo livello di complessità dell'archivio!'}
+                ? "L'aggiornamento non contribuisce al livello del tuo archivio."
+                : "Ogni articolo scaricato ti avvicina al prossimo livello di complessità dell'archivio!"}
             </span>
           </div>
 
