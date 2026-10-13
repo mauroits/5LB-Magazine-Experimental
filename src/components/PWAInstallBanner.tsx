@@ -41,7 +41,7 @@ export const PWAInstallBanner: React.FC = () => {
 
   const deviceName = isIPad ? 'iPad' : 'iPhone';
 
-  const handleActionClick = () => {
+  const handleActionClick = async () => {
     if (isInstalled && !isInstallable) {
       setActiveModal('launch');
     } else if (isIOS && isIOSOtherBrowser) {
@@ -49,9 +49,17 @@ export const PWAInstallBanner: React.FC = () => {
     } else if (isIOS && isIOSSafari) {
       setActiveModal('ios');
     } else if (isInstallable) {
-      install();
+      const ok = await install();
+      if (!ok && !isStandalone) {
+        setActiveModal('chrome');
+      }
     } else if (isUnsupportedBrowser) {
       setActiveModal('unsupported');
+    } else {
+      const ok = await install();
+      if (!ok) {
+        setActiveModal('chrome');
+      }
     }
   };
 
@@ -185,6 +193,7 @@ export const PWAInstallBanner: React.FC = () => {
         mode={activeModal || 'unsupported'}
         browserName={unsupportedBrowserName}
         isIPad={isIPad}
+        onRetryInstall={install}
       />
     </>
   );

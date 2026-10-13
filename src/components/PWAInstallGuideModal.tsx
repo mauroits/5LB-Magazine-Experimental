@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { launchInstalledApp } from '../utils/pwaLauncher';
 
-export type PWAInstallModalMode = 'unsupported' | 'ios' | 'ios-redirect' | 'launch';
+export type PWAInstallModalMode = 'unsupported' | 'ios' | 'ios-redirect' | 'launch' | 'chrome';
 
 interface PWAInstallGuideModalProps {
   isOpen: boolean;
@@ -22,6 +22,7 @@ interface PWAInstallGuideModalProps {
   browserName?: string;
   isIPad?: boolean;
   onInstalledMarked?: () => void;
+  onRetryInstall?: () => void;
 }
 
 export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
@@ -107,6 +108,11 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                 <Smartphone className="w-5 h-5" />
               </div>
             )}
+            {mode === 'chrome' && (
+              <div className="p-2 rounded-xl bg-orange-100 text-orange-600 dark:bg-orange-950/70 dark:text-orange-400 shrink-0">
+                <Download className="w-5 h-5" />
+              </div>
+            )}
 
             <h3
               id="pwa-install-title"
@@ -116,6 +122,7 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               {mode === 'ios' && `Installa su ${deviceName} (Safari)`}
               {mode === 'ios-redirect' && `Usa Safari per installare su ${deviceName}`}
               {mode === 'launch' && 'App 5LB Magazine'}
+              {mode === 'chrome' && `Installa con ${browserName || 'Google Chrome'}`}
             </h3>
           </div>
 
@@ -305,6 +312,68 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* CASE E: Chrome on Android / Desktop Manual Guide */}
+          {mode === 'chrome' && (
+            <>
+              <div className="p-3.5 rounded-2xl bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800/60 text-orange-950 dark:text-orange-200 text-xs leading-relaxed">
+                Puoi installare <strong>5LB Magazine</strong> come vera applicazione (con lettura offline e notifiche) direttamente da <strong>{browserName || 'Chrome'}</strong>:
+              </div>
+
+              <div className="space-y-3.5 pt-1">
+                {isAndroid ? (
+                  <>
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-bold text-xs shrink-0 dark:bg-orange-950 dark:text-orange-300">
+                        1
+                      </span>
+                      <p className="text-xs sm:text-sm">
+                        Tocca il pulsante <strong className="text-slate-900 dark:text-white">Menu (⋮)</strong> con i tre puntini verticali in alto a destra in Chrome.
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-bold text-xs shrink-0 dark:bg-orange-950 dark:text-orange-300">
+                        2
+                      </span>
+                      <p className="text-xs sm:text-sm">
+                        Seleziona la voce <strong className="text-slate-900 dark:text-white">&ldquo;Installa applicazione&rdquo;</strong> (oppure &ldquo;Aggiungi a schermata Home&rdquo;).
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-bold text-xs shrink-0 dark:bg-orange-950 dark:text-orange-300">
+                        3
+                      </span>
+                      <p className="text-xs sm:text-sm">
+                        Tocca <strong className="text-slate-900 dark:text-white">&ldquo;Installa&rdquo;</strong> per confermare. L'icona 5LB Magazine apparirà sulla tua schermata Home!
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-bold text-xs shrink-0 dark:bg-orange-950 dark:text-orange-300">
+                        1
+                      </span>
+                      <p className="text-xs sm:text-sm">
+                        Fai clic sull'icona di installazione <strong className="text-slate-900 dark:text-white">⊕ o Computer</strong> che compare all'estremità destra della barra degli indirizzi di Chrome.
+                      </p>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-100 text-orange-700 font-bold text-xs shrink-0 dark:bg-orange-950 dark:text-orange-300">
+                        2
+                      </span>
+                      <p className="text-xs sm:text-sm">
+                        In alternativa, apri il menu di Chrome <strong className="text-slate-900 dark:text-white">(⋮)</strong> in alto a destra, seleziona <strong className="text-slate-900 dark:text-white">&ldquo;Salva e condividi&rdquo;</strong> e clicca su <strong className="text-slate-900 dark:text-white">&ldquo;Installa 5LB Magazine&rdquo;</strong>.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* 3. FIXED FOOTER: Buttons are ALWAYS visible and clickable */}
@@ -345,6 +414,30 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                 className="w-full py-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 text-xs font-medium transition cursor-pointer"
               >
                 Chiudi
+              </button>
+            </>
+          )}
+
+          {mode === 'chrome' && (
+            <>
+              {onRetryInstall && (
+                <button
+                  onClick={() => {
+                    onRetryInstall();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-95 py-2.5 sm:py-3 px-4 text-xs sm:text-sm font-bold text-white transition shadow-sm cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Avvia finestra di installazione</span>
+                </button>
+              )}
+
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-medium transition cursor-pointer"
+              >
+                Ho capito le istruzioni
               </button>
             </>
           )}

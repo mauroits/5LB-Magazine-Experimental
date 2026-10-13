@@ -20,6 +20,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
 
@@ -28,6 +32,9 @@ jobs:
 
       - name: Build project
         run: bun run build
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

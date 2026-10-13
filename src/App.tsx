@@ -71,17 +71,20 @@ interface CategoryFeedState {
 }
 
 function getArticlePath(post: BloggerPost): string {
+  const base = import.meta.env.BASE_URL || '/';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
   try {
     if (post.link) {
       const parsed = new URL(post.link);
       if (parsed.pathname && parsed.pathname !== '/') {
-        return parsed.pathname;
+        const cleanPath = parsed.pathname.startsWith('/') ? parsed.pathname.slice(1) : parsed.pathname;
+        return `${cleanBase}${cleanPath}`;
       }
     }
   } catch {
     // fallback se link non è un URL assoluto
   }
-  return `/articolo/${encodeURIComponent(post.id)}`;
+  return `${cleanBase}articolo/${encodeURIComponent(post.id)}`;
 }
 
 export default function App() {
@@ -625,10 +628,11 @@ export default function App() {
 
   const handleClosePost = useCallback(() => {
     setSelectedPost(null);
-    if (window.location.pathname !== '/') {
-      window.history.pushState({}, '5LB Magazine', '/');
+    const basePath = import.meta.env.BASE_URL || '/';
+    if (window.location.pathname !== basePath && window.location.pathname !== basePath.replace(/\/$/, '')) {
+      window.history.pushState({}, '5LB Magazine', basePath);
       document.title = '5LB Magazine';
-      trackPageView('/', '5LB Magazine');
+      trackPageView(basePath, '5LB Magazine');
     }
   }, []);
 
@@ -645,9 +649,10 @@ export default function App() {
         }
       }
       // Se si torna alla pagina principale
+      const basePath = import.meta.env.BASE_URL || '/';
       setSelectedPost(null);
       document.title = '5LB Magazine';
-      trackPageView(window.location.pathname || '/', '5LB Magazine');
+      trackPageView(window.location.pathname || basePath, '5LB Magazine');
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -657,11 +662,14 @@ export default function App() {
   // Deep linking al caricamento iniziale se l'URL contiene il percorso di un articolo
   useEffect(() => {
     const allAvailable = [...accadeOggiPosts, ...posts];
-    if (allAvailable.length > 0 && !selectedPost && window.location.pathname !== '/') {
+    const basePath = import.meta.env.BASE_URL || '/';
+    const isAtBase = window.location.pathname === basePath || window.location.pathname === basePath.replace(/\/$/, '');
+    if (allAvailable.length > 0 && !selectedPost && !isAtBase) {
       const currentPath = window.location.pathname;
       const matched = allAvailable.find((p) => {
         try {
-          return new URL(p.link).pathname === currentPath;
+          const articlePath = getArticlePath(p);
+          return articlePath === currentPath || new URL(p.link).pathname === currentPath;
         } catch {
           return false;
         }

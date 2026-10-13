@@ -4,45 +4,93 @@ import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
+/**
+ * Calcola dinamicamente il percorso di base dell'app.
+ * Supporta lo spostamento continuo tra diversi repository GitHub:
+ * 1. BASE_PATH (impostato da actions/configure-pages@v5 o workflow)
+ * 2. VITE_BASE_URL o BASE_URL
+ * 3. GITHUB_REPOSITORY (variabile standard GitHub Actions, es. "owner/test-repo")
+ * 4. Fallback '/' per custom domain o ambiente locale/preview
+ */
+function getBasePath(): string {
+  if (process.env.BASE_PATH !== undefined && process.env.BASE_PATH !== '') {
+    const bp = process.env.BASE_PATH.trim();
+    if (!bp || bp === '/') return '/';
+    const withLeading = bp.startsWith('/') ? bp : `/${bp}`;
+    return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
+  }
+
+  if (process.env.BASE_PATH === '') {
+    return '/';
+  }
+
+  const customBase = process.env.VITE_BASE_URL || process.env.BASE_URL;
+  if (customBase !== undefined && customBase !== '') {
+    const bp = customBase.trim();
+    if (!bp || bp === '/') return '/';
+    const withLeading = bp.startsWith('/') ? bp : `/${bp}`;
+    return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
+  }
+
+  if (process.env.GITHUB_REPOSITORY) {
+    const parts = process.env.GITHUB_REPOSITORY.split('/');
+    const repoName = parts[1]?.trim();
+    if (repoName && repoName.toLowerCase().endsWith('.github.io')) {
+      return '/';
+    }
+    if (repoName) {
+      return `/${repoName}/`;
+    }
+  }
+
+  return '/';
+}
+
 export default defineConfig(() => {
+  const base = getBasePath();
+
   return {
-    // Rileva automaticamente il nome del repository su GitHub Pages,
-    // altrimenti usa la radice '/' per il dominio personalizzato o per il locale
-    base: process.env.GITHUB_REPOSITORY 
-      ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/` 
-      : '/',
+    base,
 
     plugins: [
       react(),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'logo-faviconBLU.png', 'logoBLU_APP.jpg', 'sw-sync.js'],
+        includeAssets: [
+          'favicon.ico',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+          'logo-faviconBLU.png',
+          'logoBLU_APP.jpg',
+          'sw-sync.js',
+        ],
         manifest: {
-          id: '/',
+          id: base,
           name: '5LB Magazine - La rivista sulle 5 Leggi Biologiche',
           short_name: '5LB Magazine',
           description: 'App ufficiale di 5LB Magazine con risorse formative e informative.',
           theme_color: '#000836',
           background_color: '#000836',
           display: 'standalone',
-          start_url: '/',
-          scope: '/',
+          start_url: base,
+          scope: base,
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: `${base}pwa-192x192.png`,
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: `${base}pwa-512x512.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: `${base}pwa-maskable-512x512.png`,
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -51,19 +99,19 @@ export default defineConfig(() => {
           protocol_handlers: [
             {
               protocol: 'web+magazinelb',
-              url: '/?launch_pwa=1#%s',
+              url: `${base}?launch_pwa=1#%s`,
             },
           ],
           related_applications: [
             {
               platform: 'webapp',
-              url: '/manifest.webmanifest',
+              url: `${base}manifest.webmanifest`,
             },
           ],
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          importScripts: ['/sw-sync.js'],
+          importScripts: [`${base}sw-sync.js`],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/magazine\.5lb\.eu\/feeds\/.*/i,

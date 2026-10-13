@@ -10,6 +10,7 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
     isInstallable,
     isStandalone,
     isInstalled,
+    isChromium,
     isIOS,
     isIPad,
     isIOSSafari,
@@ -20,6 +21,13 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
   } = usePWAInstall();
 
   const [activeModal, setActiveModal] = useState<PWAInstallModalMode | null>(null);
+
+  const handleInstallClick = async () => {
+    const ok = await install();
+    if (!ok && !isStandalone) {
+      setActiveModal('chrome');
+    }
+  };
 
   // 0. Offline status: Replaces "App Attiva" in the sidebar with "APP OFFLINE" LED
   if (!isOnline) {
@@ -101,19 +109,30 @@ export const PWAInstallButton: React.FC<{ compact?: boolean }> = ({ compact = fa
     );
   }
 
-  // 3. Chromium / Android / Desktop flow (Standard beforeinstallprompt)
-  if (isInstallable) {
+  // 3. Chromium / Android / Desktop flow (Active beforeinstallprompt or manual Chrome menu)
+  if (isInstallable || isChromium || (!isIOS && !isUnsupportedBrowser)) {
     return (
-      <button
-        onClick={install}
-        className={`flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium shadow-sm transition active:scale-95 cursor-pointer ${
-          compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-xs sm:text-sm w-full justify-center'
-        }`}
-        title="Installa l'app 5LB Magazine sul dispositivo"
-      >
-        <Download className="w-4 h-4" />
-        <span>Installa App</span>
-      </button>
+      <>
+        <button
+          onClick={handleInstallClick}
+          className={`flex items-center gap-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium shadow-sm transition active:scale-95 cursor-pointer ${
+            compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-xs sm:text-sm w-full justify-center'
+          }`}
+          title="Installa l'app 5LB Magazine sul dispositivo"
+        >
+          <Download className="w-4 h-4" />
+          <span>Installa App</span>
+        </button>
+
+        <PWAInstallGuideModal
+          isOpen={activeModal === 'chrome'}
+          onClose={() => setActiveModal(null)}
+          mode="chrome"
+          browserName={unsupportedBrowserName || 'Chrome'}
+          isIPad={isIPad}
+          onRetryInstall={install}
+        />
+      </>
     );
   }
 

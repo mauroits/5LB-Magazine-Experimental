@@ -138,10 +138,14 @@ async function checkFeedUpdatesInBackground() {
 
       // Trigger native notification
       if (self.registration && self.registration.showNotification) {
+        const scope = self.registration.scope || '/';
+        const iconUrl = new URL('pwa-192x192.png', scope).href;
+        const badgeUrl = new URL('icon.svg', scope).href;
+
         await self.registration.showNotification('Nuovo articolo: ' + postInfo.title, {
           body: (postInfo.summary || 'Un nuovo articolo è disponibile su 5LB Magazine. Tocca per leggere.').slice(0, 110) + '...',
-          icon: '/pwa-192x192.png',
-          badge: '/icon.svg',
+          icon: iconUrl,
+          badge: badgeUrl,
           tag: postInfo.id,
           data: {
             postId: postInfo.id,
@@ -165,7 +169,8 @@ self.addEventListener('periodicsync', (event) => {
 // Handle clicking on native push/periodic notifications
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/';
+  const fallbackUrl = self.registration?.scope || '/';
+  const urlToOpen = event.notification.data?.url || fallbackUrl;
   const postId = event.notification.data?.postId;
 
   event.waitUntil(

@@ -21,6 +21,16 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 
+    <!-- Early capture of PWA beforeinstallprompt event for Chromium browsers -->
+    <script>
+      window.__pwaDeferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__pwaDeferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('5lb:beforeinstallprompt', { detail: e }));
+      });
+    </script>
+
     <!-- Google Consent Mode v2 & Google Analytics (gtag.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];

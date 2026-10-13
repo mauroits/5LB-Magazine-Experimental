@@ -1,4 +1,5 @@
 import { BloggerPost, NotificationItem } from '../types';
+import { getAssetUrl } from '../utils/assets';
 
 const NOTIFICATIONS_STORAGE_KEY = '5lb_magazine_notifications_v1';
 const LAST_SEEN_DATE_KEY = '5lb_magazine_last_seen_date_v1';
@@ -114,8 +115,8 @@ export function triggerPushNotification(title: string, body: string, url?: strin
     try {
       const n = new Notification(title, {
         body,
-        icon: '/pwa-192x192.png',
-        badge: '/icon.svg',
+        icon: getAssetUrl('pwa-192x192.png'),
+        badge: getAssetUrl('icon.svg'),
         tag: postId || title,
       });
       n.onclick = () => {

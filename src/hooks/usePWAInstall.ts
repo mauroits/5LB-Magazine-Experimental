@@ -19,6 +19,7 @@ export interface BrowserEnvironment {
   isIOSSafari: boolean;
   isIOSOtherBrowser: boolean;
   isAndroid: boolean;
+  isChromium: boolean;
   isOpera: boolean;
   isFirefox: boolean;
   isUnsupported: boolean;
@@ -35,6 +36,7 @@ export function getBrowserEnv(): BrowserEnvironment {
       isIOSSafari: false,
       isIOSOtherBrowser: false,
       isAndroid: false,
+      isChromium: false,
       isOpera: false,
       isFirefox: false,
       isUnsupported: false,
@@ -129,6 +131,7 @@ export function getBrowserEnv(): BrowserEnvironment {
     isIOSSafari,
     isIOSOtherBrowser,
     isAndroid,
+    isChromium,
     isOpera,
     isFirefox,
     isUnsupported,
@@ -151,6 +154,13 @@ export function usePWAInstall() {
     setEnv(currentEnv);
     setIsStandalone(currentEnv.isStandalone);
 
+    // Controlla se prima-install-prompt è stato catturato presto in index.html
+    const earlyPrompt = (window as unknown as { __pwaDeferredPrompt?: BeforeInstallPromptEvent }).__pwaDeferredPrompt;
+    if (earlyPrompt) {
+      setDeferredPrompt(earlyPrompt);
+      setIsInstalledOnDevice(false);
+    }
+
     // Check Chrome/Android installed related apps API
     detectInstalledRelatedApps().then((installed) => {
       if (installed) {
@@ -161,32 +171,54 @@ export function usePWAInstall() {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
+      (window as unknown as { __pwaDeferredPrompt?: BeforeInstallPromptEvent }).__pwaDeferredPrompt = e as BeforeInstallPromptEvent;
       // If beforeinstallprompt fired, the browser confirms the app is NOT installed
       setIsInstalledOnDevice(false);
+    };
+
+    const handleEarlyCustomEvent = (e: Event) => {
+      const customEvt = e as CustomEvent<BeforeInstallPromptEvent>;
+      if (customEvt.detail) {
+        setDeferredPrompt(customEvt.detail);
+        setIsInstalledOnDevice(false);
+      }
     };
 
     const handleAppInstalled = () => {
       setIsInstalledOnDevice(true);
       setDeferredPrompt(null);
+      (window as unknown as { __pwaDeferredPrompt?: null }).__pwaDeferredPrompt = null;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('5lb:beforeinstallprompt', handleEarlyCustomEvent);
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('5lb:beforeinstallprompt', handleEarlyCustomEvent);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
-  const install = async () => {
-    if (!deferredPrompt) return false;
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstalledOnDevice(true);
-      setDeferredPrompt(null);
-      return true;
+  const install = async (): Promise<boolean> => {
+    const promptToUse =
+      deferredPrompt ||
+      (window as unknown as { __pwaDeferredPrompt?: BeforeInstallPromptEvent }).__pwaDeferredPrompt;
+
+    if (!promptToUse) return false;
+
+    try {
+      await promptToUse.prompt();
+      const { outcome } = await promptToUse.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalledOnDevice(true);
+        setDeferredPrompt(null);
+        (window as unknown as { __pwaDeferredPrompt?: null }).__pwaDeferredPrompt = null;
+        return true;
+      }
+    } catch (err) {
+      console.warn('Install prompt error:', err);
     }
     return false;
   };
@@ -207,6 +239,7 @@ export function usePWAInstall() {
     isStandalone,
     isInstalled,
     isInstalledOnDevice,
+    isChromium: env.isChromium,
     isIOS: env.isIOS,
     isIPad: env.isIPad,
     isIPhone: env.isIPhone,
