@@ -145,6 +145,61 @@ export function getCachedPosts(): BloggerPost[] {
 }
 
 /**
+ * Converte una voce (entry) grezza del feed Atom/JSON Blogger in un oggetto BloggerPost standardizzato.
+ */
+export function parseBloggerEntry(
+  entry: any,
+  readIds?: Set<string>,
+  favIds?: Set<string>
+): BloggerPost {
+  const currentRead = readIds || getReadPostIds();
+  const currentFavs = favIds || getFavoritePostIds();
+
+  const id = entry.id?.$t || Math.random().toString();
+  const title = (entry.title?.$t || 'Senza titolo').trim();
+  const published = entry.published?.$t || new Date().toISOString();
+  const updated = entry.updated?.$t || published;
+  const content = entry.content?.$t || entry.summary?.$t || '';
+  const summary = cleanTextSnippet(content);
+
+  const categories: string[] = Array.isArray(entry.category)
+    ? entry.category.map((c: any) => c.term || '').filter(Boolean)
+    : [];
+
+  let link = 'https://magazine.5lb.eu';
+  if (Array.isArray(entry.link)) {
+    const altLink = entry.link.find((l: any) => l.rel === 'alternate' && l.type === 'text/html');
+    if (altLink && altLink.href) {
+      link = altLink.href;
+    }
+  }
+
+  const authorName = entry.author?.[0]?.name?.$t || 'Redazione 5LB';
+
+  let thumbnail: string | undefined = undefined;
+  if (entry.media$thumbnail?.url) {
+    thumbnail = upgradeThumbnailUrl(entry.media$thumbnail.url);
+  } else {
+    thumbnail = extractFirstImage(content);
+  }
+
+  return {
+    id,
+    title,
+    published,
+    updated,
+    content,
+    summary,
+    categories,
+    link,
+    author: { name: authorName },
+    thumbnail,
+    isRead: currentRead.has(id),
+    isFavorite: currentFavs.has(id),
+  };
+}
+
+/**
  * Fetch feed using Google Blogger's official JSONP protocol (alt=json-in-script).
  * Avoids browser CORS restrictions on static deployments (e.g. app.5lb.eu or GitHub Pages).
  */
@@ -353,51 +408,9 @@ export async function fetchBloggerPosts(options?: {
     return pubTime <= cutoffTime;
   });
 
-  const parsedPosts: BloggerPost[] = validEntries.map((entry) => {
-    const id = entry.id?.$t || Math.random().toString();
-    const title = entry.title?.$t || 'Senza titolo';
-    const published = entry.published?.$t || new Date().toISOString();
-    const updated = entry.updated?.$t || published;
-    const content = entry.content?.$t || entry.summary?.$t || '';
-    const summary = cleanTextSnippet(content);
-
-    const categories: string[] = Array.isArray(entry.category)
-      ? entry.category.map((c: any) => c.term || '').filter(Boolean)
-      : [];
-
-    let link = 'https://magazine.5lb.eu';
-    if (Array.isArray(entry.link)) {
-      const altLink = entry.link.find((l: any) => l.rel === 'alternate' && l.type === 'text/html');
-      if (altLink && altLink.href) {
-        link = altLink.href;
-      }
-    }
-
-    const authorName = entry.author?.[0]?.name?.$t || 'Redazione 5LB';
-
-    // Upgrade thumbnail resolution (including YouTube video thumbnails)
-    let thumbnail: string | undefined = undefined;
-    if (entry.media$thumbnail?.url) {
-      thumbnail = upgradeThumbnailUrl(entry.media$thumbnail.url);
-    } else {
-      thumbnail = extractFirstImage(content);
-    }
-
-    return {
-      id,
-      title,
-      published,
-      updated,
-      content,
-      summary,
-      categories,
-      link,
-      author: { name: authorName },
-      thumbnail,
-      isRead: readIds.has(id),
-      isFavorite: favIds.has(id),
-    };
-  });
+  const parsedPosts: BloggerPost[] = validEntries.map((entry) =>
+    parseBloggerEntry(entry, readIds, favIds)
+  );
 
   // Merge and update cached posts in localStorage for general feed
   if (!category) {
@@ -482,4 +495,260 @@ export function formatItalianDate(dateStr: string): string {
     return dateStr;
   }
 }
+
+/**
+ * Normalizza un URL di un articolo per confronti affidabili e deduplicazione:
+ * - Rimozione parametri di query (?m=1, ecc.) e hash
+ * - Estrazione del pathname normalizzato in minuscolo senza slash finale
+ */
+export function normalizeArticleUrl(url: string): string {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const parsed = new URL(url.trim(), 'https://magazine.5lb.eu');
+    return parsed.pathname.replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/**
+ * Verifica se un URL appartiene al dominio di 5LB Magazine (https://magazine.5lb.eu)
+ * ed è un percorso di contenuto (non la homepage vuota o un asset statico come immagini o css).
+ */
+export function isMagazineUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  try {
+    const parsed = new URL(trimmed);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host !== 'magazine.5lb.eu') return false;
+
+    const pathname = parsed.pathname.toLowerCase().replace(/\/+$/, '');
+    if (!pathname || pathname === '') return false;
+    // Esclude asset grafici o script
+    if (/\.(png|jpe?g|gif|svg|webp|ico|css|js|woff2?|xml|json)$/i.test(pathname)) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cerca se un articolo corrispondente all'URL è già presente nella lista o cache locale.
+ */
+export function findPostByUrl(url: string, posts?: BloggerPost[]): BloggerPost | undefined {
+  if (!url) return undefined;
+  const list = posts || getCachedPosts();
+  const targetNorm = normalizeArticleUrl(url);
+  if (!targetNorm) return undefined;
+
+  return list.find((p) => {
+    if (p.link && normalizeArticleUrl(p.link) === targetNorm) return true;
+    return false;
+  });
+}
+
+/**
+ * Esegue il fetch da Blogger usando uno script JSONP diretto con callback casuale.
+ */
+function fetchBloggerScriptUrl(fullUrl: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const cbName = `blogger_cb_direct_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+    const script = document.createElement('script');
+    const separator = fullUrl.includes('?') ? '&' : '?';
+    script.src = `${fullUrl}${separator}alt=json-in-script&callback=${cbName}`;
+    script.async = true;
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout durante la richiesta diretta a Blogger'));
+    }, 15000);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+      try {
+        delete (window as any)[cbName];
+      } catch {
+        (window as any)[cbName] = undefined;
+      }
+    };
+
+    (window as any)[cbName] = (data: any) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('Errore di connessione a Blogger'));
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * Scarica via RSS/Blogger API un singolo articolo partendo dal suo URL di magazine.5lb.eu.
+ * Supporta sia post regolari (/20xx/...) che pagine monografiche (/p/...).
+ */
+export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
+  if (!url) throw new Error('URL non valida.');
+  const trimmedUrl = url.trim();
+  const parsed = new URL(trimmedUrl, 'https://magazine.5lb.eu');
+  const targetNorm = normalizeArticleUrl(parsed.href);
+
+  const isPage = targetNorm.startsWith('/p/');
+  let jsonResult: any = null;
+
+  if (isPage) {
+    // 1. Prova via backend proxy
+    try {
+      const res = await fetch('/api/feed?type=pages&max-results=50');
+      if (res.ok) jsonResult = await res.json();
+    } catch {
+      // ignore
+    }
+
+    // 2. Prova fetch diretto o JSONP
+    if (!jsonResult || !jsonResult.feed) {
+      try {
+        const res = await fetch('https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=50');
+        if (res.ok) jsonResult = await res.json();
+      } catch {
+        try {
+          jsonResult = await fetchBloggerScriptUrl('https://magazine.5lb.eu/feeds/pages/default?max-results=50');
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (jsonResult?.feed?.entry) {
+      const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
+      const matched = entries.find((e) => {
+        const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+        return link && normalizeArticleUrl(link) === targetNorm;
+      });
+      if (matched) {
+        return parseBloggerEntry(matched);
+      }
+    }
+  } else {
+    // Post regolare di magazine.5lb.eu
+    const filename = targetNorm.split('/').pop()?.replace(/\.html$/, '') || '';
+    const words = filename.split(/[-_]+/).filter((w) => w.length > 2);
+    const searchQueries = [
+      words.slice(0, 3).join(' '),
+      words[0],
+      filename,
+    ].filter(Boolean);
+
+    for (const q of searchQueries) {
+      jsonResult = null;
+      // Prova proxy locale
+      try {
+        const res = await fetch(`/api/feed?max-results=30&q=${encodeURIComponent(q)}`);
+        if (res.ok) jsonResult = await res.json();
+      } catch {
+        // ignore
+      }
+
+      // Prova fetch diretto o JSONP
+      if (!jsonResult || !jsonResult.feed) {
+        try {
+          const directUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=30&q=${encodeURIComponent(q)}`;
+          const res = await fetch(directUrl);
+          if (res.ok) jsonResult = await res.json();
+        } catch {
+          try {
+            jsonResult = await fetchBloggerJsonp(30, 1, undefined, q);
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (jsonResult?.feed?.entry) {
+        const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
+        const matched = entries.find((e) => {
+          const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+          return link && normalizeArticleUrl(link) === targetNorm;
+        });
+        if (matched) {
+          return parseBloggerEntry(matched);
+        }
+      }
+    }
+  }
+
+  // Se già in cache e la rete non trova o è offline, restituisci quello in cache
+  const cached = findPostByUrl(trimmedUrl);
+  if (cached) {
+    return cached;
+  }
+
+  throw new Error(`Impossibile scaricare l'articolo via RSS per "${trimmedUrl}".`);
+}
+
+/**
+ * Salva o aggiorna un articolo nella cache locale e aggiorna la persistenza:
+ * - Se già esistente (stesso id o stesso pathname link): aggiorna i campi mantenendo isRead e isFavorite.
+ * - Se nuovo: inserisce l'articolo e mantiene l'ordinamento decrescente per data di pubblicazione.
+ * Restituisce l'array aggiornato e un flag isUpdate (true se già presente, false se nuovo).
+ */
+export function saveOrUpdatePostInCache(
+  post: BloggerPost,
+  currentPosts: BloggerPost[]
+): { updatedPosts: BloggerPost[]; isUpdate: boolean; post: BloggerPost } {
+  const targetNorm = normalizeArticleUrl(post.link);
+  const existingIdx = currentPosts.findIndex((p) => {
+    if (p.id === post.id) return true;
+    if (p.link && post.link && normalizeArticleUrl(p.link) === targetNorm) return true;
+    return false;
+  });
+
+  let isUpdate = false;
+  let finalPost: BloggerPost;
+  let updatedPosts: BloggerPost[];
+
+  if (existingIdx >= 0) {
+    isUpdate = true;
+    const existing = currentPosts[existingIdx];
+    finalPost = {
+      ...post,
+      id: existing.id || post.id,
+      isRead: existing.isRead ?? post.isRead,
+      isFavorite: existing.isFavorite ?? post.isFavorite,
+    };
+    updatedPosts = [...currentPosts];
+    updatedPosts[existingIdx] = finalPost;
+  } else {
+    isUpdate = false;
+    finalPost = post;
+    updatedPosts = [post, ...currentPosts];
+  }
+
+  // Ordina per data di pubblicazione decrescente
+  updatedPosts.sort((a, b) => {
+    const diff = new Date(b.published).getTime() - new Date(a.published).getTime();
+    if (diff !== 0) return diff;
+    return b.id.localeCompare(a.id);
+  });
+
+  try {
+    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(updatedPosts.slice(0, 600)));
+    saveFeedCacheTimestamp(Date.now());
+    syncNewestPostWithSW(updatedPosts).catch(() => {});
+  } catch (e) {
+    console.warn('LocalStorage pieno per la cache dei post:', e);
+  }
+
+  return { updatedPosts, isUpdate, post: finalPost };
+}
+
 

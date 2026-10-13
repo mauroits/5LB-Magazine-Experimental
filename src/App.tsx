@@ -8,6 +8,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ArticleList } from './components/ArticleList';
 import { ArticleModal } from './components/ArticleModal';
+import { ArchiveArticlePromptModal } from './components/ArchiveArticlePromptModal';
 import { InfoModal } from './components/InfoModal';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { BadgeModal } from './components/BadgeModal';
@@ -42,7 +43,11 @@ import {
   saveFavoritePostIds,
   computeCategoryCounts,
   FEED_CACHE_TTL_MS,
-  getFeedCacheTimestamp
+  getFeedCacheTimestamp,
+  isMagazineUrl,
+  findPostByUrl,
+  fetchPostByUrl,
+  saveOrUpdatePostInCache
 } from './services/bloggerFeed';
 import { FEED_SYNC_CONFIG } from './config/syncConfig';
 import {
@@ -138,6 +143,10 @@ export default function App() {
   const [isCookieManageMode, setIsCookieManageMode] = useState(false);
   const [isBadgesModalOpen, setIsBadgesModalOpen] = useState(false);
   const [celebrationBadge, setCelebrationBadge] = useState<BadgeTier | null>(null);
+
+  // Link interception popup state for magazine.5lb.eu links
+  const [promptArticleUrl, setPromptArticleUrl] = useState<string | null>(null);
+  const [isDownloadingArticle, setIsDownloadingArticle] = useState(false);
 
   // Active in-app Toast Notification
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
@@ -919,6 +928,58 @@ export default function App() {
     }
   }, [isSearchingOnline]);
 
+  // Matching existing post for link interception modal
+  const promptExistingPost = useMemo(() => {
+    if (!promptArticleUrl) return null;
+    return findPostByUrl(promptArticleUrl, posts) || null;
+  }, [promptArticleUrl, posts]);
+
+  // Handler for downloading / updating an article from a magazine.5lb.eu URL into local archive
+  const handleDownloadArticleByUrl = useCallback(
+    async (url: string) => {
+      setIsDownloadingArticle(true);
+      try {
+        const fetchedPost = await fetchPostByUrl(url);
+        const { updatedPosts, isUpdate, post: savedPost } = saveOrUpdatePostInCache(fetchedPost, posts);
+        setPosts(updatedPosts);
+
+        // Check for newly unlocked badges based on the updated count of collected articles
+        const newlyUnlocked = checkAndUnlockBadges(updatedPosts.length);
+        if (newlyUnlocked.length > 0) {
+          setCelebrationBadge(newlyUnlocked[newlyUnlocked.length - 1]);
+        }
+
+        // Show toast notification
+        setToastNotification({
+          id: 'archive-notif-' + Date.now(),
+          title: isUpdate ? 'Articolo aggiornato nell’archivio' : 'Articolo aggiunto all’archivio',
+          body: isUpdate
+            ? `"${savedPost.title}" era già presente ed è stato aggiornato con successo.`
+            : `"${savedPost.title}" è stato scaricato in RSS e archiviato (${updatedPosts.length} articoli totali).`,
+          date: new Date().toISOString(),
+          read: false,
+          postId: savedPost.id,
+          url: savedPost.link,
+        });
+
+        setPromptArticleUrl(null);
+      } catch (err: any) {
+        console.error('Errore scaricamento articolo via RSS:', err);
+        setToastNotification({
+          id: 'archive-err-' + Date.now(),
+          title: 'Scaricamento non riuscito',
+          body: err?.message || 'Impossibile scaricare l’articolo via RSS. Puoi aprirlo nel browser.',
+          date: new Date().toISOString(),
+          read: false,
+        });
+        throw err;
+      } finally {
+        setIsDownloadingArticle(false);
+      }
+    },
+    [posts]
+  );
+
   return (
     <div className="min-h-screen h-screen bg-slate-100 dark:bg-slate-950 flex font-sans overflow-hidden">
       {/* Responsive Drawer on mobile / Stationary Full-Height Sidebar reaching the top on desktop & landscape tablet (lg+) */}
@@ -947,7 +1008,12 @@ export default function App() {
               link_domain: domain,
               link_type: 'external_resource',
             });
-            openExternalBrowser(item.targetUrl);
+            if (isMagazineUrl(item.targetUrl)) {
+              setPromptArticleUrl(item.targetUrl);
+              setIsSidebarOpen(false);
+            } else {
+              openExternalBrowser(item.targetUrl);
+            }
           }
         }}
         onOpenNotebook={handleOpenNotebook}
@@ -1066,6 +1132,18 @@ export default function App() {
         onToggleFavorite={handleToggleFavorite}
         isFavorite={selectedPost ? selectedPost.isFavorite || false : false}
         initialSearchQuery={searchQuery}
+        onInterceptLink={(url) => setPromptArticleUrl(url)}
+      />
+
+      {/* Confirmation & Archive Download Modal for magazine.5lb.eu links */}
+      <ArchiveArticlePromptModal
+        isOpen={Boolean(promptArticleUrl)}
+        onClose={() => setPromptArticleUrl(null)}
+        targetUrl={promptArticleUrl}
+        existingPost={promptExistingPost}
+        onConfirmDownload={handleDownloadArticleByUrl}
+        onOpenExternal={(url) => openExternalBrowser(url)}
+        isDownloading={isDownloadingArticle}
       />
 
       <InfoModal

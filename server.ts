@@ -17,9 +17,13 @@ app.get('/api/feed', async (req, res) => {
     const startIndex = req.query['start-index'] || '1';
     const category = req.query['category'] as string | undefined;
     const q = req.query['q'] as string | undefined;
+    const feedType = req.query['type'] as string | undefined;
 
-    let targetUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
-    if (category) {
+    let targetUrl = feedType === 'pages'
+      ? `https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=${maxResults}`
+      : `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
+
+    if (category && feedType !== 'pages') {
       targetUrl = `https://magazine.5lb.eu/feeds/posts/default/-/${encodeURIComponent(category)}?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
     }
     if (q) {

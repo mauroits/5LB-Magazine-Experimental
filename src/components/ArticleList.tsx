@@ -255,7 +255,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                       className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full cursor-pointer hover:scale-105 transition-transform ${badge.badgeTag}`}
                       title="Clicca per visualizzare tutti i tuoi badge"
                     >
-                      Livello {badge.level} • {badge.name}
+                      L. {badge.level} • {badge.name}
                     </button>
                   );
                 }
@@ -532,7 +532,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                         className={`p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition ${
                           post.isFavorite ? 'text-red-500' : 'text-slate-400 hover:text-slate-700'
                         }`}
-                        title={post.isFavorite ? 'Rimuovi dai preferiti' : 'Aggiungi a Ti piace'}
+                        title={post.isFavorite ? 'Rimuovi dai salvati' : 'Aggiungi a Salva per dopo'}
                       >
                         <Heart
                           className={`w-3.5 h-3.5 ${

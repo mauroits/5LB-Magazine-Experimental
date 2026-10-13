@@ -59,7 +59,7 @@ export const ArchiveBadgeButton: React.FC<ArchiveBadgeButtonProps> = ({
         <span
           className={`absolute -top-1.5 -right-1.5 text-[9px] font-black rounded-full px-1 py-0.5 leading-none shadow-xs ring-1 ring-white dark:ring-slate-900 ${currentBadge.badgeTag}`}
         >
-          Lv{currentBadge.level}
+          L.{currentBadge.level}
         </span>
       </button>
     );
@@ -101,11 +101,11 @@ export const BadgeNavPill: React.FC<BadgeNavPillProps> = ({ totalArticles, onCli
       <button
         onClick={handleClick}
         type="button"
-        title={`Livello ${currentBadge.level}: ${currentBadge.name} (${totalArticles} articoli). Clicca per visualizzare i dettagli.`}
+        title={`L. ${currentBadge.level}: ${currentBadge.name} (${totalArticles} articoli). Clicca per visualizzare i dettagli.`}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-xs font-bold border transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer shadow-2xs ${currentBadge.badgeBg} ${currentBadge.badgeBorder} ${currentBadge.badgeText}`}
       >
         <BadgeTierIcon iconName={currentBadge.iconName} className="w-3.5 h-3.5" />
-        <span className="text-[10px] uppercase tracking-wider font-extrabold">Lv{currentBadge.level}</span>
+        <span className="text-[10px] uppercase tracking-wider font-extrabold">L.{currentBadge.level}</span>
       </button>
     );
   }

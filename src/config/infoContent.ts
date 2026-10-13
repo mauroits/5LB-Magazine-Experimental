@@ -103,7 +103,7 @@ export const INFO_PAGE_CONTENT = {
     points: [
       {
         title: 'Dati Memorizzati in Locale (Local Storage)',
-        text: 'Lo stato degli articoli letti, gli articoli contrassegnati nei preferiti ("Ti piace") e le preferenze delle notifiche sono memorizzati esclusivamente nella memoria locale del tuo browser. Nessun dato personale o cronologia di lettura viene trasmesso a server esterni o terze parti.',
+        text: 'Lo stato degli articoli letti, gli articoli contrassegnati nei salvati ("Salva per dopo") e le preferenze delle notifiche sono memorizzati esclusivamente nella memoria locale del tuo browser. Nessun dato personale o cronologia di lettura viene trasmesso a server esterni o terze parti.',
       },
       {
         title: 'Accesso a Google Gemini',

@@ -55,7 +55,7 @@ export const QUICK_FILTERS: NavItem[] = [
   },
   {
     id: 'filter-ti-piace',
-    label: 'Ti piace',
+    label: 'Salva per dopo',
     type: 'filter',
     iconName: 'heart',
   },

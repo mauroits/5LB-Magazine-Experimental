@@ -307,7 +307,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               { id: 'filter-accade-oggi', label: 'Accade oggi', icon: 'users', color: 'text-black dark:text-white' },
               { id: 'filter-ultime', label: 'Il mio archivio', icon: 'archive', color: 'text-orange-600' },
               { id: 'filter-non-letto', label: 'Non letto', icon: 'mail', color: 'text-emerald-600' },
-              { id: 'filter-ti-piace', label: 'Ti piace', icon: 'heart', color: 'text-slate-900 dark:text-white' },
+              { id: 'filter-ti-piace', label: 'Salva per dopo', icon: 'heart', color: 'text-slate-900 dark:text-white' },
             ].map((f) => {
               const item: NavItem = {
                 id: f.id,

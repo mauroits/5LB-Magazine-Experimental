@@ -26,7 +26,7 @@ import {
   Send
 } from 'lucide-react';
 import { BloggerPost } from '../types';
-import { formatItalianDate } from '../services/bloggerFeed';
+import { formatItalianDate, isMagazineUrl } from '../services/bloggerFeed';
 import { highlightHtmlContent } from '../utils/searchUtils';
 import { trackEvent } from '../services/analytics';
 import { openExternalBrowser } from '../utils/browserLauncher';
@@ -176,6 +176,7 @@ interface ArticleModalProps {
   onToggleFavorite: (postId: string) => void;
   isFavorite: boolean;
   initialSearchQuery?: string;
+  onInterceptLink?: (url: string) => void;
 }
 
 export const ArticleModal: React.FC<ArticleModalProps> = ({
@@ -184,6 +185,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
   onToggleFavorite,
   isFavorite,
   initialSearchQuery = '',
+  onInterceptLink,
 }) => {
   const [fontSize, setFontSize] = useState<number>(17); // base px
   const [copied, setCopied] = useState(false);
@@ -843,7 +845,11 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                     article_title: post.title,
                     article_id: post.id,
                   });
-                  openExternalBrowser(href);
+                  if (onInterceptLink && isMagazineUrl(href)) {
+                    onInterceptLink(href);
+                  } else {
+                    openExternalBrowser(href);
+                  }
                 }
               }
             }}
@@ -900,7 +906,11 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                     article_title: post.title,
                     article_id: post.id,
                   });
-                  openExternalBrowser(post.link);
+                  if (onInterceptLink && isMagazineUrl(post.link)) {
+                    onInterceptLink(post.link);
+                  } else {
+                    openExternalBrowser(post.link);
+                  }
                 }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs transition shadow-xs cursor-pointer"
               >
