@@ -622,7 +622,7 @@ export default function App() {
       if (activeFilter.id === 'today') return 'Accade Oggi';
       if (activeFilter.id === 'all') return 'Il mio archivio';
       if (activeFilter.id === 'unread') return 'Articoli Non Letti';
-      if (activeFilter.id === 'favorites') return 'Articoli che Ti Piacciono';
+      if (activeFilter.id === 'favorites') return 'Articoli salvati';
     } else if (activeFilter.type === 'rss') {
       return activeFilter.label || activeFilter.category;
     }

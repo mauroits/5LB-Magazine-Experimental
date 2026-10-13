@@ -166,13 +166,12 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
           <div className="text-slate-600 dark:text-slate-300 leading-relaxed text-xs sm:text-sm">
             {isAlreadyArchived ? (
               <p>
-                Questo articolo è <strong>già presente</strong> nel tuo archivio locale. Se avvii lo scarico RSS, i contenuti e le immagini verranno sincronizzati con l'ultima revisione online{' '}
-                <strong>senza creare duplicati</strong> e l'articolo sarà contrassegnato in <strong>Salva per dopo</strong>.
+                Questo articolo è <strong>già presente</strong> nel tuo archivio locale.
               </p>
             ) : (
               <p>
-                Il link selezionato fa parte delle pubblicazioni ufficiali di <strong>magazine.5lb.eu</strong>.
-                Verrà scaricato via RSS, salvato nel tuo archivio locale e aggiunto automaticamente alla sezione <strong>Salva per dopo</strong> della sidebar.
+                Il link selezionato fa parte delle pubblicazioni di <strong>magazine.5lb.eu</strong>.
+                Verrà scaricato e salvato nel tuo archivio locale e aggiunto automaticamente alla sezione <strong>Salva per dopo</strong> della sidebar.
               </p>
             )}
           </div>
@@ -180,7 +179,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
           {/* Salva per dopo badge info */}
           <div className="flex items-center gap-2.5 p-3 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-rose-800 dark:text-rose-200 text-xs">
             <Heart className="w-4 h-4 fill-current text-rose-500 shrink-0" />
-            <span>Contrassegnato automaticamente nella categoria <strong>Salva per dopo</strong> della sidebar.</span>
+            <span>L'articolo sarà messo nella categoria <strong>Salva per dopo</strong> della barra laterale.</span>
           </div>
 
           {/* Badges hint */}
@@ -188,8 +187,8 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
             <span>
               {isAlreadyArchived
-                ? 'L’aggiornamento mantiene intatto il conteggio dei badge sbloccati.'
-                : 'Ogni articolo scaricato aumenta il totale in archivio e ti avvicina al prossimo Badge 5LB!'}
+                ? 'L’aggiornamento mantiene non contribuisce al livello del tuo archivio.'
+                : 'Ogni articolo scaricato ti avvicina al prossimo livello di complessità dell'archivio!'}
             </span>
           </div>
 
@@ -221,12 +220,12 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             ) : isAlreadyArchived ? (
               <>
                 <RotateCw className="w-4 h-4" />
-                <span>Aggiorna nell'archivio</span>
+                <span>Aggiorna e salva per dopo</span>
               </>
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                <span>Scarica e archivia</span>
+                <span>Scarica e salva per dopo</span>
               </>
             )}
           </button>
@@ -237,7 +236,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
               onClick={handleExternal}
               disabled={isDownloading}
               className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs sm:text-sm transition cursor-pointer"
-              title="Apri nel browser esterno"
+              title="Apri subito nel browser"
             >
               <span>Apri nel browser</span>
               <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
