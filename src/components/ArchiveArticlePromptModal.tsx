@@ -171,7 +171,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             ) : (
               <p>
                 Il link selezionato fa parte delle pubblicazioni di <strong>magazine.5lb.eu</strong>.
-                Verrà scaricato e salvato nel tuo archivio locale e aggiunto automaticamente alla sezione <strong>Salva per dopo</strong> della sidebar.
+                Non è presente nel tuo archivio locale, puoi scaricato e salvarlo ora.
               </p>
             )}
           </div>
@@ -238,7 +238,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
               className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs sm:text-sm transition cursor-pointer"
               title="Apri subito nel browser"
             >
-              <span>Apri nel browser</span>
+              <span>Apri subito nel browser</span>
               <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
