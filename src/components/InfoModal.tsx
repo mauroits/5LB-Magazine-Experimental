@@ -13,10 +13,13 @@ import {
   WifiOff,
   RefreshCw,
   Check,
-  Cookie
+  Cookie,
+  Award
 } from 'lucide-react';
 import { Logo5LB } from './Logo5LB';
 import { INFO_PAGE_CONTENT } from '../config/infoContent';
+import { BADGE_TIERS } from '../services/badgeService';
+import { BadgeTierIcon } from './BadgeIcon';
 
 interface InfoModalProps {
   isOpen: boolean;
@@ -41,7 +44,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({
   const content = INFO_PAGE_CONTENT;
 
   // Icons for feature cards
-  const featureIcons = [Layers, Sparkles, Bell, WifiOff];
+  const featureIcons = [Award, Layers, Sparkles, Bell, WifiOff];
 
   const handleManualRefresh = () => {
     if (onRefreshFeed) {
@@ -135,7 +138,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({
                       </div>
 
                       {/* Tasto dedicato nel tab aggregatore di notizie per riavviare il download degli RSS */}
-                      {idx === 0 && onRefreshFeed && (
+                      {card.title.includes('Aggregatore') && onRefreshFeed && (
                         <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-slate-700/80">
                           <button
                             onClick={handleManualRefresh}
@@ -158,6 +161,38 @@ export const InfoModal: React.FC<InfoModalProps> = ({
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Sezione esplicativa visiva dei 5 livelli di badge */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-orange-50/70 to-amber-50/50 dark:from-slate-800/80 dark:to-orange-950/20 border border-orange-200/80 dark:border-orange-800/50 space-y-3">
+                <div className="flex items-center gap-2 text-slate-900 dark:text-white">
+                  <Award className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  <h4 className="text-sm font-bold">
+                    Traguardi & Livelli dei Badge (Collezione in "Il mio archivio")
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  I badge si sbloccano automaticamente collezionando articoli tramite la navigazione e le ricerche:
+                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                  {BADGE_TIERS.map((tier) => (
+                    <div
+                      key={tier.id}
+                      className={`p-2.5 rounded-xl border text-center flex flex-col items-center justify-between shadow-2xs ${tier.badgeBg} ${tier.badgeBorder}`}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 flex items-center justify-center mb-1.5 shadow-2xs">
+                        <BadgeTierIcon iconName={tier.iconName} className={`w-4 h-4 ${tier.badgeText}`} />
+                      </div>
+                      <span className="text-[10px] font-extrabold uppercase tracking-wide text-orange-600 dark:text-orange-400">
+                        {tier.threshold} Articoli
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-900 dark:text-white leading-tight mt-0.5 line-clamp-1">
+                        {tier.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

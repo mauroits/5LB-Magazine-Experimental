@@ -417,7 +417,7 @@ export async function fetchBloggerPosts(options?: {
         if (diff !== 0) return diff;
         return b.id.localeCompare(a.id);
       });
-      localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(merged.slice(0, 300)));
+      localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(merged.slice(0, 600)));
       saveFeedCacheTimestamp(Date.now());
       syncNewestPostWithSW(merged).catch(() => {});
     } catch (e) {

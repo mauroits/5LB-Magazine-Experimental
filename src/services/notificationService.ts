@@ -73,6 +73,13 @@ export function markNotificationAsRead(id: string) {
   window.dispatchEvent(new CustomEvent('5lb:notifications-updated'));
 }
 
+export function toggleNotificationRead(id: string) {
+  const current = getStoredNotifications();
+  const updated = current.map((n) => (n.id === id ? { ...n, read: !n.read } : n));
+  localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(updated));
+  window.dispatchEvent(new CustomEvent('5lb:notifications-updated'));
+}
+
 export function markAllNotificationsAsRead() {
   const current = getStoredNotifications();
   const updated = current.map((n) => ({ ...n, read: true }));

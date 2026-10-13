@@ -24,12 +24,17 @@ export const INFO_PAGE_CONTENT = {
   funzioni: {
     title: 'Panoramica delle Funzionalità',
     intro:
-      'Questa App è l’hub integrato di 5LB Magazine e 5LB Framework, progettata per la consultazione fluida su smartphone, tablet e desktop.',
+      'Questa App è l’hub integrato di 5LB Magazine e 5LB Framework, progettata per la consultazione fluida su smartphone, tablet e desktop. Più navighi tra le sezioni e più cerchi all’interno dell’app, più collezioni articoli, conoscenza e varietà nel tuo archivio personale.',
     cards: [
       {
-        title: 'Aggregatore di notizie',
+        title: 'Collezione Articoli & Badge di Conoscenza',
         description:
-          'Collegamento diretto alle pubblicazioni del 5LB Magazine, organizzate per sezioni informative e sulla Eziologia (sintomi e apparati). Inoltre sono visualizzabili le novità social quotidiane dal canale Telegram',
+          'Più navighi tra le diverse categorie ed eziologie e più cerchi all’interno dell’app, più collezioni articoli, conoscenza e varietà in "Il mio archivio". Raggiungendo i traguardi di 20, 80, 150, 250 e 350 articoli collezionati sblocchi esclusivi badge di livello, con notifiche dedicate e un’icona speciale mostrata sia nella pagina "Il mio archivio" che nella barra di navigazione.',
+      },
+      {
+        title: 'Aggregatore di notizie & Archivio',
+        description:
+          'Collegamento diretto alle pubblicazioni del 5LB Magazine, organizzate per sezioni informative e sulla Eziologia (sintomi e apparati). Inoltre sono visualizzabili le novità social quotidiane dal canale Telegram.',
       },
       {
         title: 'Assistente per una ricerca in linguaggio naturale',
@@ -39,7 +44,7 @@ export const INFO_PAGE_CONTENT = {
       {
         title: 'Notifiche Push in Tempo Reale',
         description:
-          'Avviso immediato su smartphone e computer ad ogni nuova pubblicazione, con segnale acustico e centro notifiche integrato.',
+          'Avviso immediato su smartphone e computer ad ogni nuova pubblicazione e al raggiungimento di nuovi traguardi e badge sbloccati.',
       },
       {
         title: 'Modalità Offline & Installazione',
@@ -54,14 +59,39 @@ export const INFO_PAGE_CONTENT = {
     title: 'Registro delle Versioni & Miglioramenti',
     releases: [
       {
-        version: 'v2.0.0 (Attuale)',
+        version: '2.1.0 (attuale)',
         date: 'Ottobre 2026',
         isCurrent: true,
         notes: [
-          'Prima release della seconda versione, ricostruita dalle fondamenta.',
+          'Gestione notifiche: contrassegna come letta al clic e pulsante dedicato su ogni singola notifica per cambiare lo stato letto/non letto.',
+          'Navigazione sidebar: nuova icona archivio per "Il mio archivio", rimozione del conteggio a lato di "Accade oggi", icona e testo neri per "Accade oggi".',
+          'Ordinamento articoli: indicatore esplicito della parola "Recenti" quando gli articoli sono in ordine cronologico e "Casuale" con lo shuffle.',
+          'Sistema di badge di conoscenza sbloccabili a 20, 80, 150, 250 e 350 articoli collezionati in "Il mio archivio".',
+          'Notifica in tempo reale allo sblocco dei nuovi badge con finestra celebrativa e centro notifiche.',
+          'Icona speciale del badge visibile nella pagina "Il mio archivio" e nella barra di navigazione a fianco al numero di articoli.',
         ],
       },
-      
+      {
+        version: '2.0.0',
+        date: 'Settembre 2026',
+        isCurrent: false,
+        notes: [
+          'Integrazione feed "Accade Oggi" con notizie e aggiornamenti flash dal canale Telegram @magazine5LB.',
+          'Supporto completo PWA con installazione rapida, sincronizzazione periodica e navigazione offline.',
+          'Integrazione assistente di ricerca semantica (NotebookLM).',
+          'Salvataggio preferiti ("Ti piace") e stato articoli letti in memoria locale.',
+        ],
+      },
+      {
+        version: '1.0.0',
+        date: 'Agosto 2026',
+        isCurrent: false,
+        notes: [
+          'Lancio iniziale della Web App 5LB Magazine.',
+          'Consultazione feed RSS con categorizzazione per sezioni tematiche ed Eziologia.',
+          'Supporto tema chiaro/scuro e layout responsive ottimizzato per smartphone, tablet e desktop.',
+        ],
+      },
     ],
   },
 

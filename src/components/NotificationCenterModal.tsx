@@ -12,11 +12,15 @@ import {
   ExternalLink,
   ShieldCheck,
   Users,
-  Clock
+  Clock,
+  CheckCircle2,
+  Circle
 } from 'lucide-react';
 import { NotificationItem } from '../types';
 import {
   getStoredNotifications,
+  markNotificationAsRead,
+  toggleNotificationRead,
   markAllNotificationsAsRead,
   requestPushPermission,
   triggerPushNotification,
@@ -95,6 +99,23 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
   const handleMarkAllRead = () => {
     markAllNotificationsAsRead();
+    refreshList();
+  };
+
+  const handleNotificationClick = (item: NotificationItem) => {
+    markNotificationAsRead(item.id);
+    refreshList();
+    if (item.postId && onSelectPostId) {
+      onSelectPostId(item.postId);
+      onClose();
+    } else if (item.url) {
+      window.open(item.url, '_blank');
+    }
+  };
+
+  const handleToggleSingleRead = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleNotificationRead(id);
     refreshList();
   };
 
@@ -268,21 +289,20 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             notifications.map((item) => (
               <div
                 key={item.id}
-                onClick={() => {
-                  if (item.postId && onSelectPostId) {
-                    onSelectPostId(item.postId);
-                    onClose();
-                  } else if (item.url) {
-                    window.open(item.url, '_blank');
-                  }
-                }}
-                className={`p-3.5 rounded-2xl border transition cursor-pointer flex items-start gap-3 ${
+                onClick={() => handleNotificationClick(item)}
+                className={`group p-3.5 rounded-2xl border transition cursor-pointer flex items-start gap-3 ${
                   item.read
-                    ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 opacity-80'
-                    : 'bg-orange-50/60 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900/60 shadow-xs'
+                    ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 opacity-80 hover:opacity-100 hover:border-slate-300 dark:hover:border-slate-700'
+                    : 'bg-orange-50/60 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900/60 shadow-xs hover:border-orange-300 dark:hover:border-orange-800'
                 }`}
               >
-                <div className="w-2 h-2 rounded-full bg-orange-500 mt-1.5 shrink-0" />
+                <div
+                  className={`w-2 h-2 rounded-full mt-1.5 shrink-0 transition-colors ${
+                    item.read
+                      ? 'bg-slate-300 dark:bg-slate-600'
+                      : 'bg-orange-500 ring-2 ring-orange-200 dark:ring-orange-950'
+                  }`}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <h5 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -296,6 +316,31 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                     {item.body}
                   </p>
                 </div>
+
+                {/* Pulsante dedicato per cambiare lo stato letto / non letto */}
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleSingleRead(item.id, e)}
+                  className={`px-2 py-1.5 rounded-xl border transition-all shrink-0 cursor-pointer flex items-center gap-1.5 active:scale-95 ${
+                    item.read
+                      ? 'border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50/50'
+                      : 'border-orange-300 dark:border-orange-800 bg-orange-100/90 dark:bg-orange-950 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900 font-semibold shadow-2xs'
+                  }`}
+                  title={item.read ? 'Contrassegna come non letta' : 'Contrassegna come letta'}
+                  aria-label={item.read ? 'Contrassegna come non letta' : 'Contrassegna come letta'}
+                >
+                  {item.read ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-[11px] hidden sm:inline">Letta</span>
+                    </>
+                  ) : (
+                    <>
+                      <Circle className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400 fill-orange-500/20" />
+                      <span className="text-[11px] hidden sm:inline">Da leggere</span>
+                    </>
+                  )}
+                </button>
               </div>
             ))
           )}

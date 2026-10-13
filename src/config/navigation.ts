@@ -44,7 +44,7 @@ export const QUICK_FILTERS: NavItem[] = [
     id: 'filter-ultime',
     label: 'Il mio archivio',
     type: 'filter',
-    iconName: 'clock',
+    iconName: 'archive',
     description: 'Tutti gli articoli pubblicati su 5LB Magazine',
   },
   {

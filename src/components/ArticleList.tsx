@@ -22,6 +22,8 @@ import {
 import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
 import { AI_BANNER_CONFIG } from '../config/infoContent';
+import { ArchiveBadgeButton } from './BadgeIcon';
+import { getCurrentBadge, getNextBadge } from '../services/badgeService';
 
 interface ArticleListProps {
   posts: BloggerPost[];
@@ -41,6 +43,7 @@ interface ArticleListProps {
   onResetFilter: () => void;
   onOpenNotebook: () => void;
   onMarkAllAsRead?: () => void;
+  onOpenBadgesModal?: () => void;
 }
 
 export const ArticleList: React.FC<ArticleListProps> = ({
@@ -61,6 +64,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   onResetFilter,
   onOpenNotebook,
   onMarkAllAsRead,
+  onOpenBadgesModal,
 }) => {
   const [viewMode, setViewMode] = useState<'card' | 'compact'>('card');
   const [sortMode, setSortMode] = useState<'chronological' | 'shuffle'>(() => {
@@ -225,16 +229,57 @@ export const ArticleList: React.FC<ArticleListProps> = ({
       {/* Subheader Toolbar: Filter badge & view switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-950/70 dark:text-orange-300">
-            <Filter className="w-4 h-4" />
-          </div>
+          {activeFilter.type === 'quick' && activeFilter.id === 'all' ? (
+            <ArchiveBadgeButton
+              totalArticles={posts.length}
+              onClick={() => {
+                if (onOpenBadgesModal) onOpenBadgesModal();
+              }}
+            />
+          ) : (
+            <div className="p-1.5 rounded-lg bg-orange-100 text-orange-700 dark:bg-orange-950/70 dark:text-orange-300">
+              <Filter className="w-4 h-4" />
+            </div>
+          )}
           <div>
-            <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
-              {filterTitle}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                {filterTitle}
+              </h1>
+              {activeFilter.type === 'quick' && activeFilter.id === 'all' && (() => {
+                const badge = getCurrentBadge(posts.length);
+                if (badge) {
+                  return (
+                    <button
+                      onClick={() => onOpenBadgesModal && onOpenBadgesModal()}
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full cursor-pointer hover:scale-105 transition-transform ${badge.badgeTag}`}
+                      title="Clicca per visualizzare tutti i tuoi badge"
+                    >
+                      Livello {badge.level} • {badge.name}
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    onClick={() => onOpenBadgesModal && onOpenBadgesModal()}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800 cursor-pointer hover:scale-105 transition-transform"
+                    title="Clicca per visualizzare i badge"
+                  >
+                    Obiettivo 20 articoli
+                  </button>
+                );
+              })()}
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {displayedPosts.length} {displayedPosts.length === 1 ? 'articolo trovato' : 'articoli trovati'}
-              {sortMode === 'shuffle' && ' • Casuale'}
+              {displayedPosts.length} {displayedPosts.length === 1 ? 'articolo trovato' : 'articoli'}
+              {activeFilter.type === 'quick' && activeFilter.id === 'all' && (() => {
+                const next = getNextBadge(posts.length);
+                if (next) {
+                  return <span> • Prossimo traguardo a {next.threshold} ({next.threshold - posts.length} rimanenti)</span>;
+                }
+                return <span> • Massimo livello raggiunto!</span>;
+              })()}
+              {sortMode === 'shuffle' ? ' • Casuale' : ' • Recenti'}
             </p>
           </div>
 

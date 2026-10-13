@@ -10,6 +10,9 @@ import { ArticleList } from './components/ArticleList';
 import { ArticleModal } from './components/ArticleModal';
 import { InfoModal } from './components/InfoModal';
 import { NotificationCenterModal } from './components/NotificationCenterModal';
+import { BadgeModal } from './components/BadgeModal';
+import { BadgeUnlockCelebrationModal } from './components/BadgeUnlockCelebrationModal';
+import { checkAndUnlockBadges, BadgeTier } from './services/badgeService';
 import { openExternalBrowser } from './utils/browserLauncher';
 
 
@@ -125,6 +128,8 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isCookieModalOpen, setIsCookieModalOpen] = useState(false);
   const [isCookieManageMode, setIsCookieManageMode] = useState(false);
+  const [isBadgesModalOpen, setIsBadgesModalOpen] = useState(false);
+  const [celebrationBadge, setCelebrationBadge] = useState<BadgeTier | null>(null);
 
   // Active in-app Toast Notification
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
@@ -351,6 +356,11 @@ export default function App() {
                 }
                 const merged = Array.from(map.values());
                 merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
+                try {
+                  localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
+                } catch (e) {
+                  // ignore
+                }
                 return merged;
               });
             }
@@ -383,7 +393,13 @@ export default function App() {
         setPosts((prev) => {
           const existingIds = new Set(prev.map((p) => p.id));
           const newPosts = res.posts.filter((p) => !existingIds.has(p.id));
-          return [...prev, ...newPosts];
+          const merged = [...prev, ...newPosts];
+          try {
+            localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
+          } catch (e) {
+            // ignore
+          }
+          return merged;
         });
         setMainFeedHasMore(res.hasMore);
       } catch (err) {
@@ -423,9 +439,15 @@ export default function App() {
           for (const p of res.posts) {
             if (!map.has(p.id)) map.set(p.id, p);
           }
-          return Array.from(map.values()).sort(
+          const merged = Array.from(map.values()).sort(
             (a, b) => new Date(b.published).getTime() - new Date(a.published).getTime()
           );
+          try {
+            localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
+          } catch (e) {
+            // ignore
+          }
+          return merged;
         });
       } catch (err) {
         console.error('Errore caricamento altri post categoria:', err);
@@ -474,6 +496,17 @@ export default function App() {
       window.removeEventListener('5lb:open-post', handleOpenPost);
     };
   }, [posts, accadeOggiPosts]);
+
+  // Monitor badge progression based on articles in "Il mio archivio" (posts.length)
+  useEffect(() => {
+    if (posts.length > 0) {
+      const newlyUnlocked = checkAndUnlockBadges(posts.length);
+      if (newlyUnlocked.length > 0) {
+        // Show celebratory modal for the highest newly unlocked badge
+        setCelebrationBadge(newlyUnlocked[newlyUnlocked.length - 1]);
+      }
+    }
+  }, [posts.length]);
 
   // Derived counts
   const unreadCount = useMemo(
@@ -916,6 +949,7 @@ export default function App() {
           setIsCookieManageMode(true);
           setIsCookieModalOpen(true);
         }}
+        onOpenBadgesModal={() => setIsBadgesModalOpen(true)}
         unreadCount={unreadCount}
         totalCount={posts.length}
         favoritesCount={favoritesCount}
@@ -963,6 +997,7 @@ export default function App() {
             }}
             onMarkAllAsRead={handleMarkAllAsRead}
             onOpenNotebook={handleOpenNotebook}
+            onOpenBadgesModal={() => setIsBadgesModalOpen(true)}
           />
         </main>
       </div>
@@ -1042,6 +1077,27 @@ export default function App() {
             posts.find((it) => it.id === postId) ||
             accadeOggiPosts.find((it) => it.id === postId);
           if (p) handleSelectPost(p);
+        }}
+      />
+
+      {/* Badge Progress & Details Modal */}
+      <BadgeModal
+        isOpen={isBadgesModalOpen}
+        onClose={() => setIsBadgesModalOpen(false)}
+        totalArticles={posts.length}
+        onExploreArchive={() => {
+          setActiveFilter({ type: 'quick', id: 'all' });
+          setSearchQuery('');
+        }}
+      />
+
+      {/* Celebratory Modal when a badge tier is freshly unlocked */}
+      <BadgeUnlockCelebrationModal
+        badge={celebrationBadge}
+        onClose={() => setCelebrationBadge(null)}
+        onViewAllBadges={() => {
+          setCelebrationBadge(null);
+          setIsBadgesModalOpen(true);
         }}
       />
 

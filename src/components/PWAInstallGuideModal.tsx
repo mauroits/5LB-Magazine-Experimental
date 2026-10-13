@@ -32,6 +32,7 @@ export const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
   browserName,
   isIPad = false,
   onInstalledMarked,
+  onRetryInstall,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
 

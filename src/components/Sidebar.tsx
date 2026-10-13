@@ -21,6 +21,7 @@ import {
   Sparkles,
   Cookie,
   Users,
+  Archive,
   X
 } from 'lucide-react';
 import { NavItem, NavSection, ActiveFilter } from '../types';
@@ -43,6 +44,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { ThemeMode } from '../hooks/useTheme';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import { openExternalBrowser } from '../utils/browserLauncher';
+import { BadgeNavPill } from './BadgeIcon';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -55,6 +57,7 @@ interface SidebarProps {
   onOpenTelegram: () => void;
   onOpenInfo: () => void;
   onOpenCookieSettings?: () => void;
+  onOpenBadgesModal?: () => void;
   unreadCount: number;
   totalCount: number;
   favoritesCount: number;
@@ -75,6 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenTelegram,
   onOpenInfo,
   onOpenCookieSettings,
+  onOpenBadgesModal,
   unreadCount,
   totalCount,
   favoritesCount,
@@ -106,10 +110,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const renderIcon = (iconName: string) => {
     switch (iconName) {
+      case 'archive':
+        return <Archive className="w-5 h-5 text-orange-500" />;
       case 'clock':
         return <Clock className="w-5 h-5 text-orange-500" />;
       case 'users':
-        return <Users className="w-5 h-5 text-sky-500" />;
+        return <Users className="w-5 h-5 text-black dark:text-white" />;
       case 'mail':
         return <Mail className="w-5 h-5 text-emerald-500" />;
       case 'heart':
@@ -211,10 +217,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Get badge count for RSS item
   const getItemBadge = (item: NavItem) => {
+    // Il numero a lato di Accade oggi deve essere rimosso
+    if (item.id === 'filter-accade-oggi') return undefined;
     if (item.id === 'filter-ultime') return totalCount || undefined;
     if (item.id === 'filter-non-letto') return unreadCount || undefined;
     if (item.id === 'filter-ti-piace') return favoritesCount || undefined;
-    if (item.id === 'filter-accade-oggi') return todayCount || undefined;
 
     if (item.type === 'rss' && item.rssCategory) {
       const target = item.rssCategory.toLowerCase();
@@ -286,8 +293,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Quick Filters Section */}
           <div className="py-2">
             {[
-              { id: 'filter-accade-oggi', label: 'Accade oggi', icon: 'users', color: 'text-sky-700 dark:text-sky-300' },
-              { id: 'filter-ultime', label: 'Il mio archivio', icon: 'clock', color: 'text-orange-600' },
+              { id: 'filter-accade-oggi', label: 'Accade oggi', icon: 'users', color: 'text-black dark:text-white' },
+              { id: 'filter-ultime', label: 'Il mio archivio', icon: 'archive', color: 'text-orange-600' },
               { id: 'filter-non-letto', label: 'Non letto', icon: 'mail', color: 'text-emerald-600' },
               { id: 'filter-ti-piace', label: 'Ti piace', icon: 'heart', color: 'text-slate-900 dark:text-white' },
             ].map((f) => {
@@ -314,26 +321,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                     <span
                       className={`text-[15px] font-medium ${
-                        active ? 'text-orange-600 dark:text-orange-400 font-semibold' : f.color
+                        f.id === 'filter-accade-oggi'
+                          ? 'text-black dark:text-white font-semibold'
+                          : active
+                          ? 'text-orange-600 dark:text-orange-400 font-semibold'
+                          : f.color
                       }`}
                     >
                       {f.label}
                     </span>
                   </div>
                   {typeof badge === 'number' && badge > 0 ? (
-                    <span
-                      className={`text-sm font-semibold tabular-nums ${
-                        f.id === 'filter-accade-oggi'
-                          ? 'text-sky-600 dark:text-sky-400 font-bold'
-                          : f.id === 'filter-ultime'
-                          ? 'text-orange-600 dark:text-orange-400'
-                          : f.id === 'filter-non-letto'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      {badge}
-                    </span>
+                    f.id === 'filter-ultime' ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-sm font-semibold tabular-nums text-orange-600 dark:text-orange-400">
+                          {badge}
+                        </span>
+                        <BadgeNavPill
+                          totalArticles={totalCount}
+                          onClick={() => {
+                            if (onOpenBadgesModal) {
+                              onOpenBadgesModal();
+                            }
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          f.id === 'filter-accade-oggi'
+                            ? 'text-sky-600 dark:text-sky-400 font-bold'
+                            : f.id === 'filter-non-letto'
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    )
                   ) : null}
                 </button>
               );
