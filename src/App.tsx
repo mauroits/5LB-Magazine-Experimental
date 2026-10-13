@@ -71,6 +71,7 @@ import { NAV_SECTIONS, GOOGLE_NOTEBOOK_URL } from './config/navigation';
 import { openNotebookWithPriority } from './utils/notebookLauncher';
 import { useTheme } from './hooks/useTheme';
 import { useInterfaceZoom } from './hooks/useInterfaceZoom';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { Bell, ArrowRight, X } from 'lucide-react';
 
 interface CategoryFeedState {
@@ -106,6 +107,8 @@ export default function App() {
     resetZoom,
   } = useInterfaceZoom();
   const sections = NAV_SECTIONS;
+  const { isInstalled, isStandalone } = usePWAInstall();
+  const isAppInstalled = Boolean(isInstalled || isStandalone);
 
   // Stale-While-Revalidate: Initialize immediately from cached articles for 0ms load
   const [posts, setPosts] = useState<BloggerPost[]>(() => getCachedPosts());
@@ -934,13 +937,32 @@ export default function App() {
     return findPostByUrl(promptArticleUrl, posts) || null;
   }, [promptArticleUrl, posts]);
 
+  // Handler per intercettare i link agli articoli di magazine.5lb.eu:
+  // Se l'app NON è installata, apre direttamente nel browser esterno;
+  // Se l'app È installata (PWA standalone), apre il popup di download / aggiornamento nell'archivio.
+  const handleInterceptArticleLink = useCallback(
+    (url: string) => {
+      if (!isAppInstalled) {
+        openExternalBrowser(url);
+        return;
+      }
+      setPromptArticleUrl(url);
+    },
+    [isAppInstalled]
+  );
+
   // Handler for downloading / updating an article from a magazine.5lb.eu URL into local archive
+  // Segna automaticamente l'articolo nella categoria "Salva per dopo" (isFavorite: true)
   const handleDownloadArticleByUrl = useCallback(
     async (url: string) => {
       setIsDownloadingArticle(true);
       try {
         const fetchedPost = await fetchPostByUrl(url);
-        const { updatedPosts, isUpdate, post: savedPost } = saveOrUpdatePostInCache(fetchedPost, posts);
+        const { updatedPosts, isUpdate, post: savedPost } = saveOrUpdatePostInCache(
+          fetchedPost,
+          posts,
+          { markFavorite: true }
+        );
         setPosts(updatedPosts);
 
         // Check for newly unlocked badges based on the updated count of collected articles
@@ -952,10 +974,10 @@ export default function App() {
         // Show toast notification
         setToastNotification({
           id: 'archive-notif-' + Date.now(),
-          title: isUpdate ? 'Articolo aggiornato nell’archivio' : 'Articolo aggiunto all’archivio',
+          title: isUpdate ? 'Articolo aggiornato in "Salva per dopo"' : 'Articolo salvato in "Salva per dopo"',
           body: isUpdate
-            ? `"${savedPost.title}" era già presente ed è stato aggiornato con successo.`
-            : `"${savedPost.title}" è stato scaricato in RSS e archiviato (${updatedPosts.length} articoli totali).`,
+            ? `"${savedPost.title}" era già presente, è stato aggiornato e contrassegnato in "Salva per dopo".`
+            : `"${savedPost.title}" è stato scaricato in RSS e aggiunto a "Salva per dopo" (${updatedPosts.length} articoli totali).`,
           date: new Date().toISOString(),
           read: false,
           postId: savedPost.id,
@@ -1008,12 +1030,8 @@ export default function App() {
               link_domain: domain,
               link_type: 'external_resource',
             });
-            if (isMagazineUrl(item.targetUrl)) {
-              setPromptArticleUrl(item.targetUrl);
-              setIsSidebarOpen(false);
-            } else {
-              openExternalBrowser(item.targetUrl);
-            }
+            // I link nella sidebar di navigazione si aprono normalmente nel browser
+            openExternalBrowser(item.targetUrl);
           }
         }}
         onOpenNotebook={handleOpenNotebook}
@@ -1132,7 +1150,7 @@ export default function App() {
         onToggleFavorite={handleToggleFavorite}
         isFavorite={selectedPost ? selectedPost.isFavorite || false : false}
         initialSearchQuery={searchQuery}
-        onInterceptLink={(url) => setPromptArticleUrl(url)}
+        onInterceptLink={handleInterceptArticleLink}
       />
 
       {/* Confirmation & Archive Download Modal for magazine.5lb.eu links */}

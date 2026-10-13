@@ -703,7 +703,8 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
  */
 export function saveOrUpdatePostInCache(
   post: BloggerPost,
-  currentPosts: BloggerPost[]
+  currentPosts: BloggerPost[],
+  options?: { markFavorite?: boolean }
 ): { updatedPosts: BloggerPost[]; isUpdate: boolean; post: BloggerPost } {
   const targetNorm = normalizeArticleUrl(post.link);
   const existingIdx = currentPosts.findIndex((p) => {
@@ -723,14 +724,23 @@ export function saveOrUpdatePostInCache(
       ...post,
       id: existing.id || post.id,
       isRead: existing.isRead ?? post.isRead,
-      isFavorite: existing.isFavorite ?? post.isFavorite,
+      isFavorite: options?.markFavorite ? true : (existing.isFavorite ?? post.isFavorite),
     };
     updatedPosts = [...currentPosts];
     updatedPosts[existingIdx] = finalPost;
   } else {
     isUpdate = false;
-    finalPost = post;
-    updatedPosts = [post, ...currentPosts];
+    finalPost = {
+      ...post,
+      isFavorite: options?.markFavorite ? true : post.isFavorite,
+    };
+    updatedPosts = [finalPost, ...currentPosts];
+  }
+
+  if (options?.markFavorite) {
+    const currentFavs = getFavoritePostIds();
+    currentFavs.add(finalPost.id);
+    saveFavoritePostIds(currentFavs);
   }
 
   // Ordina per data di pubblicazione decrescente

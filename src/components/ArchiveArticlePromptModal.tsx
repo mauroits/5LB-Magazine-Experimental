@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   Sparkles,
   Loader2,
-  FileText
+  FileText,
+  Heart
 } from 'lucide-react';
 import { BloggerPost } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
@@ -166,14 +167,20 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             {isAlreadyArchived ? (
               <p>
                 Questo articolo è <strong>già presente</strong> nel tuo archivio locale. Se avvii lo scarico RSS, i contenuti e le immagini verranno sincronizzati con l'ultima revisione online{' '}
-                <strong>senza creare duplicati</strong>, preservando i tuoi preferiti e lo stato di lettura.
+                <strong>senza creare duplicati</strong> e l'articolo sarà contrassegnato in <strong>Salva per dopo</strong>.
               </p>
             ) : (
               <p>
                 Il link selezionato fa parte delle pubblicazioni ufficiali di <strong>magazine.5lb.eu</strong>.
-                Puoi scaricarlo in RSS per salvarlo per sempre nella memoria locale dell'app, leggerlo offline e includerlo nella ricerca rapida.
+                Verrà scaricato via RSS, salvato nel tuo archivio locale e aggiunto automaticamente alla sezione <strong>Salva per dopo</strong> della sidebar.
               </p>
             )}
+          </div>
+
+          {/* Salva per dopo badge info */}
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 text-rose-800 dark:text-rose-200 text-xs">
+            <Heart className="w-4 h-4 fill-current text-rose-500 shrink-0" />
+            <span>Contrassegnato automaticamente nella categoria <strong>Salva per dopo</strong> della sidebar.</span>
           </div>
 
           {/* Badges hint */}
