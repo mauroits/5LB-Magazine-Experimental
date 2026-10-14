@@ -91,12 +91,55 @@ export async function requestPushPermission(): Promise<NotificationPermission | 
   if (!('Notification' in window)) {
     return 'unsupported';
   }
+
   try {
-    const permission = await Notification.requestPermission();
+    let permission: NotificationPermission;
+    try {
+      const promiseResult = Notification.requestPermission();
+      if (promiseResult && typeof promiseResult.then === 'function') {
+        permission = await promiseResult;
+      } else {
+        // Fallback per ambienti Chromium/Android che accettano solo callback
+        permission = await new Promise((resolve) => {
+          Notification.requestPermission((p) => resolve(p));
+        });
+      }
+    } catch {
+      permission = await new Promise((resolve) => {
+        Notification.requestPermission((p) => resolve(p));
+      });
+    }
+
+    // Se autorizzato, prova ad allineare il ServiceWorker push manager
+    if (permission === 'granted' && 'serviceWorker' in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && registration.pushManager) {
+          await registration.pushManager.getSubscription();
+        }
+      } catch {
+        // Push manager opzionale
+      }
+    }
+
     return permission;
   } catch (e) {
     return 'denied';
   }
+}
+
+export function isAndroidDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /android/i.test(navigator.userAgent || '');
+}
+
+export function isStandalonePWA(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (window.navigator as any).standalone === true ||
+    document.referrer.includes('android-app://')
+  );
 }
 
 export function canSendNotification(): boolean {

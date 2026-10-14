@@ -1,6 +1,6 @@
 {
-  "summary": "Piano di implementazione per il rilevamento e il salvataggio in archivio locale degli articoli di magazine.5lb.eu aperti da link esterni o lettore RSS, con gestione duplicati, aggiornamento automatico e avanzamento badge.",
-  "updatedAt": "2026-10-13T09:28:54.518290317Z",
+  "summary": "Piano per la gestione dello sblocco notifiche su Android PWA tramite chiamata di sistema, ripristino automatico al focus e guida contestuale per autorizzazioni revocate.",
+  "updatedAt": "2026-10-14T09:21:13.631386Z",
   "requestFeedback": true,
   "userFacing": true
 }

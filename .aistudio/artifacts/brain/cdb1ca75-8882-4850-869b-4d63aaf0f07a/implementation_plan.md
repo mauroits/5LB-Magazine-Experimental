@@ -1,119 +1,80 @@
-# Rilevamento e Download RSS Articoli da Link magazine.5lb.eu
+# Gestione Sblocco Notifiche su Android PWA
 
-Aggiunge un sistema intelligente di intercettazione e scaricamento per i link interni a `https://magazine.5lb.eu` aperti dall'utente: un popup di conferma permette di salvare o aggiornare l'articolo direttamente nell'archivio locale senza duplicazioni, conteggiando i download per lo sblocco dei relativi badge.
+Questo piano definisce l'architettura e l'esperienza utente per gestire lo sblocco delle notifiche su Android quando l'app è installata sulla schermata Home (PWA), garantendo l'invio della chiamata diretta al sistema operativo e la corretta gestione del blocco imposto dai browser Chromium.
 
-## User Review & Critical Decisions
+## Decisioni Utente & Vincoli di Sistema
 
 > [!IMPORTANT]
-> Sulla base delle risposte fornite nella fase di chiarimento, sono state definite le seguenti scelte operative:
+> **Vincolo tecnico del sistema operativo Android e dei browser Chromium**:
+> Nelle specifiche W3C Push API e in Android/Chrome, una volta che l'utente revoca o disattiva le notifiche per un'origine o un'app installata, il browser imposta permanentemente `Notification.permission = 'denied'`. Da quel momento in poi, qualsiasi chiamata a `Notification.requestPermission()` viene **automaticamente rifiutata dal motore Chromium in pochi millisecondi senza mostrare la finestra di dialogo nativa**.
 
-- **Intercettazione con Popup Dedicato**: Al clic su qualsiasi link appartenente a `https://magazine.5lb.eu` (nel corpo degli articoli, sidebar o collegamenti), compare un popup modale chiaro e contestuale che chiede conferma prima di procedere, offrendo sia l'azione di salvataggio in archivio che l'apertura nel browser esterno.
-- **Deduplicazione e Aggiornamento Intelligente**: Se l'articolo identificato dall'URL è già presente nell'archivio locale, l'applicazione ne aggiorna il contenuto mantenendo intatti lo stato di lettura e i preferiti, notificando all'utente che l'articolo era già salvato ed è stato aggiornato con successo.
-- **Nessuna Interruzione della Lettura**: Al completamento del download/aggiornamento, l'app mostra un toast di notifica con stato visivo e fa rimanere l'utente nel contesto di lettura corrente, senza forzare cambi di schermata indesiderati.
-- **Avanzamento Badge Automatico**: L'incremento del conteggio degli articoli archiviati attiva la valutazione dei traguardi (`Curioso`, `Esploratore`, `Studioso`, `Esperto`, `Maestro 5LB`) con relativo sblocco ed eventuale animazione celebrativa.
-
----
-
-## 1. Overview & Core Concept
-
-- **Cosa fa**: Quando un lettore consulta un articolo o esplora l'app e tocca un link che punta a un approfondimento su `magazine.5lb.eu`, l'app riconosce l'URL del magazine. Invece di limitarsi a spedire l'utente a un browser esterno anonimo, presenta un popup elegante ("Salva nell'archivio locale"). Se confermato, recupera i dati completi dell'articolo tramite il feed Blogger/RSS, lo memorizza in locale nella libreria offline e aggiorna la progressione dei badge.
-- **Destinatari**: Studiosi e lettori delle 5 Leggi Biologiche che desiderano arricchire sistematicamente il proprio archivio offline mentre approfondiscono collegamenti ipertestuali tra casi studio, sintomi e apparati.
-- **Valore chiave**: Elimina la frammentazione tra navigazione web e archivio locale, garantendo che ogni articolo letto rimanga disponibile offline e contribuisca al traguardo dei badge di collezione.
+- **Chiamata diretta al sistema**: Al click sul pulsante "Sblocca", l'app esegue sempre e comunque la chiamata diretta al sistema (`Notification.requestPermission()` e tentativo di riallineamento push manager).
+- **Riconoscimento immediato del blocco Chromium**: Se la chiamata al sistema viene silenziata automaticamente dal sistema Android (risoluzione immediata a `'denied'`), l'app spiega con trasparenza che Android richiede un singolo tocco nelle impostazioni dell'app.
+- **Rilevamento automatico al rientro in app (`visibilitychange` / `window.focus`)**: Appena l'utente riattiva le notifiche nelle impostazioni di Android e torna all'app, la PWA rileva automaticamente il cambiamento senza bisogno di riavviare l'app, aggiorna lo stato su "Attive" e mostra la notifica di conferma.
 
 ---
 
-## 2. User Experience & Visual Design
+### 1. Panoramica & Funzionamento
 
-### Flussi Utente Principali
-
-1. **Rilevamento Link magazine.5lb.eu**:
-   - L'utente tocca un link con prefisso `https://magazine.5lb.eu/...`.
-   - Se il link è un articolo o pagina del blog, si apre il popup: **"Aggiungi al tuo archivio locale"**.
-   - Il popup visualizza l'anteprima dell'URL (o del titolo se già deducibile), specificando chiaramente se l'articolo è nuovo o già archiviato.
-2. **Scelta dell'Azione nel Popup**:
-   - **Pulsante Primario ("Scarica e Archivia" / "Aggiorna nell'Archivio")**: avvia il fetch asincrono della voce RSS/Blogger per quell'URL o slug.
-   - **Pulsante Secondario ("Apri nel Browser")**: consente all'utente di aprire la pagina web nel browser di sistema come in precedenza.
-   - **Pulsante Annulla**: chiude il popup e rimane dove si trova.
-3. **Download e Feedback Visivo**:
-   - Spinner discreto di recupero nel pulsante con messaggio di stato.
-   - A operazione completata: notifica toast in alto a destra ("Articolo salvato nell'archivio!" oppure "Articolo aggiornato nell'archivio!").
-   - Il conteggio de "Il mio archivio" si incrementa; se viene raggiunto un traguardo di badge (es. 20, 80, 150, 250, 350 articoli), scatta l'avviso e la celebrazione.
-
-### Direzione Visiva & Componenti
-
-- **Stile Archival & Curatorial**: Il popup adotta lo stile tipografico raffinato dell'app, con sfondi puliti in carta calda / ardesia scura (`bg-white dark:bg-slate-900`), bordi sottili e badge iconografici distintivi per l'archivio.
-- **Gerarchia Tipografica**: Titolo netto (`text-lg font-bold`), indicazione dell'URL con troncatura curata e descrizione dell'impatto sul proprio archivio locale.
-- **Feedback & Microinterazioni**: Transizioni fluide con `backdrop-blur`, indicatore di caricamento integrato e chiusura rapida al tocco dell'overlay o tasto Esc.
+1. **Tentativo di chiamata al sistema**:
+   - L'utente tocca "Sblocca".
+   - L'app invoca la chiamata nativa al sistema operativo.
+   - Se il sistema apre la finestra di autorizzazione e l'utente conferma, lo stato diventa istantaneamente **"Attive"** (verde).
+2. **Gestione del rifiuto automatico di Android**:
+   - Se il sistema Android non mostra la finestra (perché Chrome/Android vieta alle web app di richiedere permessi già revocati), l'interfaccia evidenzia chiaramente:
+     *"Il sistema operativo Android impedisce alle app web di mostrare nuovamente il popup dopo una revoca. Per ripristinare le notifiche, tieni premuta l'icona dell'app sulla Home > Info app (ℹ️) > Notifiche > Consenti."*
+3. **Ascolto dinamico in tempo reale**:
+   - Aggiunta di listener per `visibilitychange` e `window.addEventListener('focus')`.
+   - Non appena l'utente torna nell'app dopo aver attivato la spunta in Android, la PWA si aggiorna all'istante senza ricaricare la pagina.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+### 2. Esperienza Utente & Design
 
-- **Riconoscimento URL e Risoluzione Articolo da Feed**:
-  - *Scelta*: Interrogare l'endpoint Blogger tramite query specifica per URL / path oppure ricerca mirata dello slug nel feed, estraendo la voce completa (`BloggerPost`) con testo HTML integrale, categorie, data e thumbnail HD.
-  - *Motivazione*: Garantisce che l'articolo archiviato abbia la medesima struttura, formattazione e compatibilità di tutti gli altri post salvati nell'app, permettendo la lettura offline e la ricerca testuale interna.
-- **Strategia di Deduplicazione**:
-  - *Scelta*: Verifica sia per identificatore univoco Blogger che per pathname URL normalizzato (es. `/2023/05/titolo.html`).
-  - *Motivazione*: Evita duplicati anche in presenza di variazioni di protocollo (`http` vs `https`) o parametri di query opzionali (`?m=1`).
-- **Conservazione dei Metadati Utente**:
-  - *Scelta*: Quando un articolo già presente viene aggiornato con la versione più recente dal web, preservare lo stato di lettura (`isRead`) e il contrassegno preferito (`isFavorite`) dell'utente.
+- **Pulsante "Sblocca"**:
+  - Mostra uno stato visivo di caricamento/attesa durante la chiamata al sistema (`Richiesta al sistema in corso...`).
+  - Esegue la chiamata nativa.
+- **Pannello di supporto specifico per Android PWA**:
+  - Compare solo se la chiamata al sistema viene soppressa da Android.
+  - Presenta i passaggi dedicati per app installata su Android (icona Home > Info app > Notifiche).
+  - Include un pulsante rapido per riprovare la chiamata al sistema.
+- **Transizione automatica di successo**:
+  - Appena la permission passa a `granted` (anche in background mentre l'utente era nelle impostazioni del telefono), il badge passa automaticamente a verde "Attive" con animazione a impulsi e invia una notifica di conferma.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+### 3. Architettura Tecnica
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Interfaccia Utente                      │
-│  ┌───────────────────────┐       ┌───────────────────────┐  │
-│  │   Lettore Articolo    │       │     Altre Sezioni     │  │
-│  │  (Link interni a 5lb) │       │ (Link esterni/menu)   │  │
-│  └───────────┬───────────┘       └───────────┬───────────┘  │
-│              │                               │              │
-│              ▼                               ▼              │
-│    ┌──────────────────────────────────────────────────┐     │
-│    │  Intercettazione URL: https://magazine.5lb.eu    │     │
-│    └────────────────────────┬─────────────────────────┘     │
-│                             │                               │
-│                             ▼                               │
-│    ┌──────────────────────────────────────────────────┐     │
-│    │ Modal Popup Conferma: Scarica / Aggiorna / Apri  │     │
-│    └────────────────────────┬─────────────────────────┘     │
-└─────────────────────────────┼───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Servizio Feed & Archiviazione               │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │ Risoluzione Articolo da URL (Blogger API / JSONP)      │  │
-│  └──────────────────────────┬────────────────────────────┘  │
-│                             │                               │
-│                             ▼                               │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │ Deduplicazione e Merge in LocalStorage Cache          │  │
-│  │ - Se nuovo: inserimento + conteggio +1               │  │
-│  │ - Se esistente: aggiornamento contenuto senza copie   │  │
-│  └──────────────────────────┬────────────────────────────┘  │
-│                             │                               │
-│                             ▼                               │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │ Servizio Badge: checkAndUnlockBadges(posts.length)    │  │
-│  │ - Trigger notifica badge e celebrazione se traguardo  │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│               NotificationCenterModal                   │
+│                                                         │
+│  [Pulsante "Sblocca"] ───► requestPushPermission()       │
+│                                     │                   │
+│                                     ▼                   │
+│                           Notification.requestPermission│
+│                                     │                   │
+│                  ┌──────────────────┴─────────────────┐ │
+│                  ▼                                    ▼ │
+│              granted                               denied
+│         (Mostra "Attive")             (Rileva soppressione)
+│                                               │         │
+│                                               ▼         │
+│                                       Pannello Android  │
+│                                       Schermata Home    │
+│                                                         │
+│  [window.focus / visibilitychange] ──► refreshList()    │
+│                                               │         │
+│                                               ▼         │
+│                                     Aggiornamento auto  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Mappatura Componenti e Flussi di Stato
+1. **`src/services/notificationService.ts`**:
+   - Rafforzare `requestPushPermission()` per gestire sia `Notification.requestPermission()` promise-based che callback-based per compatibilità massima Android.
+   - Esportare una funzione per controllare il supporto nativo e l'ambiente standalone/PWA.
 
-- **Hook / Gestore Intercettazione**:
-  Funzione helper che valuta se una URL target appartiene a `magazine.5lb.eu`. Se sì, impedisce l'apertura immediata del browser e apre il dialog di conferma.
-- **Componente Dialog `ArchiveArticlePromptModal`**:
-  - Mostra il link rilevato e se l'articolo è già presente nell'archivio.
-  - Azioni: "Salva/Aggiorna nell'Archivio" (con stato di download in corso) oppure "Apri nel Browser".
-- **Funzione di Scaricamento per Singolo Articolo (`fetchPostByUrl`)**:
-  - Ricerca per URL o slug nel feed Blogger.
-  - Converte la entry Blogger nel formato unificato `BloggerPost`.
-  - Aggiorna lo stato globale e la persistenza locale in sicurezza.
-- **Notifica Toast e Controllo Badge**:
-  - Emissione del toast di conferma.
-  - Invio dell'evento per aggiornamento contatori e verifica immediata dello sblocco dei badge di download.
+2. **`src/components/NotificationCenterModal.tsx`**:
+   - Integrare listener `visibilitychange` e `focus` per sincronizzazione immediata non appena l'utente torna all'app.
+   - Visualizzare l'indicatore di chiamata al sistema in corso.
+   - Fornire la spiegazione precisa del vincolo Android per app installata su Home screen.

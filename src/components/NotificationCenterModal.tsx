@@ -13,7 +13,9 @@ import {
   Circle,
   Lock,
   Info,
-  RotateCw
+  RotateCw,
+  Smartphone,
+  Loader2
 } from 'lucide-react';
 import { NotificationItem } from '../types';
 import {
@@ -24,7 +26,9 @@ import {
   requestPushPermission,
   triggerPushNotification,
   isAccadeOggiNotificationEnabled,
-  setAccadeOggiNotificationEnabled
+  setAccadeOggiNotificationEnabled,
+  isAndroidDevice,
+  isStandalonePWA
 } from '../services/notificationService';
 import { formatItalianDate } from '../services/bloggerFeed';
 
@@ -48,6 +52,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [permissionGuide, setPermissionGuide] = useState<PermissionGuideInfo | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [accadeOggiNotifEnabled, setAccadeOggiNotifEnabled] = useState(true);
 
@@ -69,6 +74,30 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
   }, [isOpen]);
 
+  // Rileva automaticamente in tempo reale se l'utente sblocca i permessi nelle impostazioni di Android e rientra nell'app
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleVisibilityOrFocus = () => {
+      if ('Notification' in window) {
+        const currentPerm = Notification.permission;
+        setPermission(currentPerm);
+        if (currentPerm === 'granted') {
+          setPermissionGuide(null);
+          refreshList();
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleRequestPermission = async () => {
@@ -82,8 +111,10 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       return;
     }
 
+    setIsRequesting(true);
+
     try {
-      // Invia la richiesta diretta al sistema per sbloccare/autorizzare le notifiche
+      // Invia la richiesta diretta al sistema operativo per sbloccare/autorizzare le notifiche
       const result = await requestPushPermission();
       setPermission(result);
 
@@ -95,15 +126,23 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         );
         refreshList();
       } else if (result === 'denied') {
-        // Se il sistema continua a bloccare o non apre il prompt nativo
+        // Su Android/Chromium: quando un'autorizzazione è stata revocata, il browser
+        // vieta di riaprire automaticamente il popup nativo per evitare spam all'utente.
+        const isAndroid = isAndroidDevice();
+        const isStandalone = isStandalonePWA();
+
         setPermissionGuide({
           type: 'denied',
           title: 'Richiesta di sblocco inviata al sistema',
-          text: 'Abbiamo inviato la richiesta al browser. Se la finestra di sistema non è comparsa, significa che il browser memorizza il blocco: puoi sbloccarlo in pochi secondi con questi passaggi:'
+          text: isAndroid || isStandalone
+            ? 'La chiamata al sistema operativo è stata inviata. Su Android, quando un\'app ha avuto i permessi revocati, il sistema blocca la comparsa automatica del popup per motivi di privacy. Per consentirle subito:'
+            : 'La chiamata al sistema è stata inviata. Se la finestra non è comparsa perché il browser memorizza il blocco, abilita le notifiche con questi passaggi:'
         });
       }
     } catch (err) {
       console.error('Errore richiesta autorizzazione:', err);
+    } finally {
+      setIsRequesting(false);
     }
   };
 
@@ -256,15 +295,25 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             ) : permission === 'denied' ? (
               <button
                 type="button"
+                disabled={isRequesting}
                 onClick={(e) => {
                   e.stopPropagation();
                   handlePermissionButtonClick();
                 }}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer active:scale-95 transition"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 disabled:opacity-75 text-white flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer active:scale-95 transition"
                 title="Invia richiesta diretta al sistema per sbloccare le notifiche"
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-white" />
-                <span>Sblocca</span>
+                {isRequesting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Richiesta...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                    <span>Sblocca</span>
+                  </>
+                )}
               </button>
             ) : permission === 'unsupported' ? (
               <button
@@ -277,15 +326,25 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             ) : (
               <button
                 type="button"
+                disabled={isRequesting}
                 onClick={(e) => {
                   e.stopPropagation();
                   handlePermissionButtonClick();
                 }}
-                className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs shadow-xs transition active:scale-95 shrink-0 cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-75 text-white font-bold text-xs shadow-xs transition active:scale-95 shrink-0 cursor-pointer flex items-center gap-1.5"
                 title="Fai clic per autorizzare le notifiche del browser"
               >
-                <Bell className="w-3.5 h-3.5" />
-                <span>Autorizza</span>
+                {isRequesting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Richiesta...</span>
+                  </>
+                ) : (
+                  <>
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>Autorizza</span>
+                  </>
+                )}
               </button>
             )}
           </div>
@@ -342,24 +401,59 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
               )}
 
               {permissionGuide.type === 'denied' && (
-                <div className="bg-white/90 dark:bg-slate-900/90 rounded-lg p-2.5 border border-rose-200/60 dark:border-rose-900/40 space-y-1.5 text-[11px] text-slate-700 dark:text-slate-300">
-                  <div className="flex items-start gap-1.5">
-                    <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">1.</span>
-                    <span>Fai clic sull'icona del lucchetto 🔒 (o impostazioni sito) accanto all'URL del sito nella barra in alto.</span>
+                <div className="bg-white/95 dark:bg-slate-900/95 rounded-xl p-3 border border-rose-200/80 dark:border-rose-900/60 space-y-2.5 text-[11px] text-slate-700 dark:text-slate-300">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-300 pb-1 border-b border-rose-100 dark:border-rose-900/50">
+                    <Smartphone className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                    <span>Procedura rapida per Android (App installata sulla Home)</span>
                   </div>
-                  <div className="flex items-start gap-1.5">
-                    <span className="font-bold text-rose-600 dark:text-rose-400 shrink-0">2.</span>
-                    <span>Imposta la voce <strong>Notifiche</strong> su <strong>Consenti</strong>.</span>
+
+                  <div className="space-y-1.5 text-slate-700 dark:text-slate-200">
+                    <div className="flex items-start gap-2">
+                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold shrink-0 text-[10px] mt-0.5">1</span>
+                      <span>Torna alla schermata Home del tuo Android e <strong>tieni premuta l'icona dell'app 5LB Magazine</strong> per 1 secondo.</span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold shrink-0 text-[10px] mt-0.5">2</span>
+                      <span>Nel piccolo menu a comparsa, tocca l'icona <strong>Info app</strong> (cerchietto con la <strong>ℹ️</strong>).</span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <span className="flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold shrink-0 text-[10px] mt-0.5">3</span>
+                      <span>Tocca <strong>Notifiche</strong> e attiva l'opzione <strong>Consenti notifiche</strong> (o "Mostra notifiche").</span>
+                    </div>
+                  </div>
+
+                  <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-900/50 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-start gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <span>Rilevamento istantaneo: appena riattivi la voce e ritorni qui nell'app, il pulsante diventerà verde "Attive" automaticamente.</span>
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                {permissionGuide.type === 'denied' && (
+                  <button
+                    type="button"
+                    disabled={isRequesting}
+                    onClick={handleRequestPermission}
+                    className="px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
+                    title="Invia di nuovo la chiamata diretta al sistema"
+                  >
+                    {isRequesting ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Send className="w-3 h-3 text-rose-500" />
+                    )}
+                    <span>Riprova chiamata al sistema</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={refreshList}
                   className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                  title="Controlla se l'impostazione nel browser è cambiata"
+                  title="Controlla se l'impostazione nel browser o nel telefono è cambiata"
                 >
                   <RotateCw className="w-3 h-3 text-orange-500" />
                   <span>Ricarica stato autorizzazioni</span>
