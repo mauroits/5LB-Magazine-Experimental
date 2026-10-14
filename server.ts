@@ -959,7 +959,11 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+export { app };
+
+if (!process.env.FUNCTION_TARGET && !process.env.K_SERVICE && !process.env.FIREBASE_CONFIG) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

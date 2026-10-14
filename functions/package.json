@@ -1,0 +1,14 @@
+{
+  "name": "5lb-magazine-functions",
+  "description": "5LB Magazine Proxy & Cache API Cloud Function",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.3.0"
+  }
+}
