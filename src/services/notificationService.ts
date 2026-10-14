@@ -128,9 +128,24 @@ export async function requestPushPermission(): Promise<NotificationPermission | 
   }
 }
 
+export type DetectedPlatform = 'android' | 'ios' | 'desktop';
+
+export function getDetectedPlatform(): DetectedPlatform {
+  if (typeof navigator === 'undefined') return 'desktop';
+  const ua = navigator.userAgent || '';
+  if (/android/i.test(ua)) return 'android';
+  if (/iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+    return 'ios';
+  }
+  return 'desktop';
+}
+
 export function isAndroidDevice(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  return /android/i.test(navigator.userAgent || '');
+  return getDetectedPlatform() === 'android';
+}
+
+export function isIOSDevice(): boolean {
+  return getDetectedPlatform() === 'ios';
 }
 
 export function isStandalonePWA(): boolean {
@@ -140,6 +155,27 @@ export function isStandalonePWA(): boolean {
     (window.navigator as any).standalone === true ||
     document.referrer.includes('android-app://')
   );
+}
+
+export async function getLiveNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
+  if (!('Notification' in window)) {
+    return 'unsupported';
+  }
+
+  if ('permissions' in navigator && navigator.permissions && navigator.permissions.query) {
+    try {
+      const status = await navigator.permissions.query({ name: 'notifications' as PermissionName });
+      if (status && status.state) {
+        if (status.state === 'granted') return 'granted';
+        if (status.state === 'denied') return 'denied';
+        return 'default';
+      }
+    } catch {
+      // Fallback a Notification.permission
+    }
+  }
+
+  return Notification.permission;
 }
 
 export function canSendNotification(): boolean {
