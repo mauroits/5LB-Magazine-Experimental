@@ -615,9 +615,27 @@ export default function App() {
     isMainFeedLoadingMore,
   ]);
 
-  // Filter Title label
+  // Filter Title label & search placeholder
+  const isAllArchive = activeFilter.type === 'quick' && activeFilter.id === 'all';
+  const searchPlaceholder = isAllArchive
+    ? "Cerca in tutto l'archivio locale..."
+    : "Cerca in questa categoria...";
+
   const filterTitle = useMemo(() => {
-    if (searchQuery.trim()) return `Risultati per "${searchQuery}"`;
+    if (searchQuery.trim()) {
+      if (activeFilter.type === 'rss') {
+        const catName = activeFilter.label || activeFilter.category;
+        return `Risultati per "${searchQuery}" in ${catName}`;
+      }
+      if (activeFilter.type === 'quick') {
+        if (activeFilter.id === 'today') return `Risultati per "${searchQuery}" in Accade Oggi`;
+        if (activeFilter.id === 'unread') return `Risultati per "${searchQuery}" in Non letti`;
+        if (activeFilter.id === 'favorites') return `Risultati per "${searchQuery}" nei salvati`;
+        if (activeFilter.id === 'all') return `Risultati per "${searchQuery}" in tutto l'archivio`;
+      }
+      return `Risultati per "${searchQuery}" in questa categoria`;
+    }
+
     if (activeFilter.type === 'quick') {
       if (activeFilter.id === 'today') return 'Accade Oggi';
       if (activeFilter.id === 'all') return 'Il mio archivio';
@@ -900,18 +918,14 @@ export default function App() {
           read: false,
         });
       } else {
-        // Nessun articolo trovato online: mostra fumetto e torna in home
+        // Nessun articolo trovato online: mostra fumetto informativo e RESTA SULLA PAGINA DI RICERCA
         setToastNotification({
           id: 'search-empty-' + Date.now(),
           title: 'Nessun risultato online',
-          body: `Nessun articolo trovato nell'archivio online per "${trimmed}".`,
+          body: `Nessun nuovo articolo trovato nell'archivio online per "${trimmed}".`,
           date: new Date().toISOString(),
           read: false,
         });
-
-        // Torna in home
-        setSearchQuery('');
-        setActiveFilter({ type: 'quick', id: 'today' });
       }
     } catch (err) {
       console.warn('Errore durante la ricerca online:', err);
@@ -922,10 +936,6 @@ export default function App() {
         date: new Date().toISOString(),
         read: false,
       });
-
-      // Torna in home
-      setSearchQuery('');
-      setActiveFilter({ type: 'quick', id: 'today' });
     } finally {
       setIsSearchingOnline(false);
     }
@@ -1067,12 +1077,14 @@ export default function App() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           currentFilterLabel={filterTitle}
+          searchPlaceholder={searchPlaceholder}
         />
 
         {/* Article Feed Area */}
         <main className="flex-1 overflow-y-auto">
           <ArticleList
             posts={currentViewPosts}
+            totalArchiveArticles={posts.length}
             isLoading={isCurrentViewLoading}
             isLoadingMore={isCurrentViewLoadingMore}
             hasMore={currentViewHasMore}

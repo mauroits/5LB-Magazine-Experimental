@@ -38,7 +38,7 @@ export const QUICK_FILTERS: NavItem[] = [
     label: 'Accade oggi',
     type: 'filter',
     iconName: 'users',
-    description: 'Feed in tempo reale dal canale Telegram @magazine5LB',
+    description: 'Feed in tempo reale dai canali social',
   },
   {
     id: 'filter-ultime',

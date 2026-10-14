@@ -10,7 +10,8 @@ interface HeaderProps {
   unreadNotificationsCount: number;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  currentFilterLabel: string;
+  currentFilterLabel?: string;
+  searchPlaceholder?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   searchQuery,
   onSearchChange,
   currentFilterLabel,
+  searchPlaceholder = 'Cerca in questa categoria...',
 }) => {
   const [showSearchInput, setShowSearchInput] = React.useState(false);
 
@@ -37,16 +39,10 @@ export const Header: React.FC<HeaderProps> = ({
             <Menu className="w-6 h-6" />
           </button>
 
-          <div className="flex flex-col justify-center min-w-0">
-            {/* Pure official logo: VISIBLE ONLY ON MOBILE (< lg) when sidebar is hidden in off-canvas drawer.
-                HIDDEN ON DESKTOP & LANDSCAPE TABLETS (lg+) where the sidebar is fixed and already has the logo at the top */}
-            <div className="lg:hidden">
-              <Logo5LB className="h-7 sm:h-8" />
-            </div>
-
-            <span className="text-xs sm:text-sm lg:text-base font-bold text-white tracking-wide truncate max-w-[140px] sm:max-w-xs lg:max-w-md">
-              {currentFilterLabel}
-            </span>
+          {/* Pure official logo: VISIBLE ONLY ON MOBILE (< lg) when sidebar is hidden in off-canvas drawer.
+              HIDDEN ON DESKTOP & LANDSCAPE TABLETS (lg+) where the sidebar is fixed and already has the logo at the top */}
+          <div className="lg:hidden flex items-center py-0.5">
+            <Logo5LB className="h-8 sm:h-9" />
           </div>
         </div>
 
@@ -58,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Cerca in questa categoria..."
+              placeholder={searchPlaceholder}
               className="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-9 pr-8 py-1.5 text-xs sm:text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 transition"
             />
             {searchQuery && (
@@ -129,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
               autoFocus
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Cerca negli articoli..."
+              placeholder={searchPlaceholder}
               className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
             {searchQuery && (

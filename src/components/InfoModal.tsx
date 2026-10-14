@@ -144,7 +144,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({
                             onClick={handleManualRefresh}
                             disabled={isRefreshing}
                             className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
-                            title="Riscarica tutti i feed RSS da Blogger e aggiorna la memoria locale"
+                            title="Riscarica tutti i feed RSS e aggiorna la memoria locale"
                           >
                             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
                             <span>

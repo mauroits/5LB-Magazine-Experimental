@@ -34,7 +34,7 @@ export const INFO_PAGE_CONTENT = {
       {
         title: 'Aggregatore di notizie & Archivio',
         description:
-          'Collegamento diretto alle pubblicazioni del 5LB Magazine, organizzate per sezioni informative e sulla Eziologia (sintomi e apparati). Inoltre sono visualizzabili le novità social quotidiane dal canale Telegram.',
+          'Collegamento diretto alle pubblicazioni del 5LB Magazine, organizzate per sezioni informative e sulla Eziologia (sintomi e apparati). Inoltre sono visualizzabili le novità social quotidiane dai canali social.',
       },
       {
         title: 'Assistente per una ricerca in linguaggio naturale',

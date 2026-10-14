@@ -27,6 +27,7 @@ import { getCurrentBadge } from '../services/badgeService';
 
 interface ArticleListProps {
   posts: BloggerPost[];
+  totalArchiveArticles?: number;
   isLoading: boolean;
   isLoadingMore?: boolean;
   hasMore?: boolean;
@@ -48,6 +49,7 @@ interface ArticleListProps {
 
 export const ArticleList: React.FC<ArticleListProps> = ({
   posts,
+  totalArchiveArticles,
   isLoading,
   isLoadingMore = false,
   hasMore = false,
@@ -67,6 +69,9 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   onOpenBadgesModal,
 }) => {
   const [viewMode, setViewMode] = useState<'card' | 'compact'>('card');
+  const isAllArchive = activeFilter.type === 'quick' && activeFilter.id === 'all';
+  const badgeArticleCount = totalArchiveArticles ?? posts.length;
+
   const [sortMode, setSortMode] = useState<'chronological' | 'shuffle'>(() => {
     try {
       const saved = localStorage.getItem('5lb_sort_mode_v1');
@@ -231,7 +236,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
         <div className="flex items-center gap-2">
           {activeFilter.type === 'quick' && activeFilter.id === 'all' ? (
             <ArchiveBadgeButton
-              totalArticles={posts.length}
+              totalArticles={badgeArticleCount}
               onClick={() => {
                 if (onOpenBadgesModal) onOpenBadgesModal();
               }}
@@ -242,12 +247,12 @@ export const ArticleList: React.FC<ArticleListProps> = ({
             </div>
           )}
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
                 {filterTitle}
               </h1>
               {activeFilter.type === 'quick' && activeFilter.id === 'all' && (() => {
-                const badge = getCurrentBadge(posts.length);
+                const badge = getCurrentBadge(badgeArticleCount);
                 if (badge) {
                   return (
                     <button
@@ -407,20 +412,20 @@ export const ArticleList: React.FC<ArticleListProps> = ({
           (activeFilter.type === 'quick' && activeFilter.id !== 'all');
 
         return (
-          <div className="text-center py-14 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <div className="text-center py-14 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
             <BookOpen className="w-12 h-12 mx-auto text-slate-400 mb-3" />
             <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
               {searchQuery?.trim()
                 ? isSubcategory
-                  ? `Nessun articolo trovato in ${filterTitle} per "${searchQuery}"`
-                  : `Nessun articolo trovato per "${searchQuery}"`
+                  ? `Nessun articolo trovato in questa categoria per "${searchQuery}"`
+                  : `Nessun articolo trovato nell'archivio locale per "${searchQuery}"`
                 : 'Nessun articolo trovato in questa sezione'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
               {searchQuery?.trim()
                 ? isSubcategory
-                  ? `Non ci sono corrispondenze in questa sottocategoria. Puoi cercare in tutti gli articoli (sezione Il mio archivio) oppure tornare alla home.`
-                  : 'Nessun riscontro tra gli articoli attualmente memorizzati. Puoi cercare nell\'archivio online di 5LB Magazine su Blogger per importarli.'
+                  ? `La ricerca è limitata a questa categoria e non ha prodotto risultati. Puoi cercare in tutto l'archivio locale per trovare corrispondenze in altre sezioni.`
+                  : 'Nessun riscontro tra gli articoli attualmente memorizzati sul dispositivo. Puoi cercare altri risultati nell\'archivio online di Blogger.'
                 : 'Non ci sono articoli per i filtri attuali. Puoi aggiornare i feed o tornare alla home.'}
             </p>
 
@@ -431,7 +436,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
                 >
                   <Search className="w-3.5 h-3.5" />
-                  <span>Cerca in tutti gli articoli</span>
+                  <span>Cerca in tutto l'archivio locale</span>
                 </button>
               )}
 
@@ -439,17 +444,17 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 <button
                   onClick={() => onSearchOnline(searchQuery)}
                   disabled={isSearchingOnline}
-                  className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs transition shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-60 active:scale-95"
+                  className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs transition shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed active:scale-95"
                 >
                   {isSearchingOnline ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Ricerca nell'archivio online...</span>
+                      <span>Ricerca online in corso...</span>
                     </>
                   ) : (
                     <>
                       <Globe className="w-3.5 h-3.5" />
-                      <span>Cerca nell'archivio online</span>
+                      <span>Cerca altri risultati online</span>
                     </>
                   )}
                 </button>
@@ -659,7 +664,57 @@ export const ArticleList: React.FC<ArticleListProps> = ({
         </div>
       )}
 
-      {!hasMore && displayedPosts.length > 0 && !isLoading && (
+      {/* Bottom action when searching within a specific category */}
+      {searchQuery?.trim() && !isAllArchive && onSearchAllArticles && displayedPosts.length > 0 && (
+        <div className="mt-8 mb-6 p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-xs flex flex-col items-center justify-center gap-2.5">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <Filter className="w-4 h-4 text-orange-500" />
+            <span>I risultati sopra sono limitati a questa categoria ({displayedPosts.length})</span>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
+            Vuoi estendere la ricerca di "{searchQuery.trim()}" a tutti gli articoli del tuo archivio locale?
+          </p>
+          <button
+            onClick={onSearchAllArticles}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold text-xs sm:text-sm shadow-sm transition cursor-pointer"
+          >
+            <Search className="w-4 h-4" />
+            <span>Cerca in tutto l'archivio locale</span>
+          </button>
+        </div>
+      )}
+
+      {/* Bottom action when searching in the full local archive */}
+      {searchQuery?.trim() && isAllArchive && onSearchOnline && displayedPosts.length > 0 && (
+        <div className="mt-8 mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 dark:from-slate-900 dark:to-slate-800/80 border border-orange-200 dark:border-slate-700 text-center shadow-xs flex flex-col items-center justify-center gap-2.5">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+            <Globe className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+            <span>Cerchi altri risultati non ancora presenti sul dispositivo?</span>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md">
+            Interroga l'archivio online di 5LB Magazine per scaricare nuovi articoli relativi a "{searchQuery.trim()}".
+          </p>
+          <button
+            onClick={() => onSearchOnline(searchQuery)}
+            disabled={isSearchingOnline}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-95 text-white font-semibold text-xs sm:text-sm shadow-md transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isSearchingOnline ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Ricerca online in corso...</span>
+              </>
+            ) : (
+              <>
+                <Globe className="w-4 h-4" />
+                <span>Cerca altri risultati online</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {!searchQuery?.trim() && !hasMore && displayedPosts.length > 0 && !isLoading && (
         <div className="mt-8 mb-6 text-center">
           <p className="text-xs text-slate-400 dark:text-slate-500">
             Hai visualizzato tutti gli articoli disponibili ({displayedPosts.length})
