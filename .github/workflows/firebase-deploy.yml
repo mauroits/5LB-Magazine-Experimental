@@ -27,7 +27,6 @@ jobs:
         with:
           workload_identity_provider: 'projects/647376803938/locations/global/workloadIdentityPools/github-provider/providers/github-provider'
           service_account: 'firebase-adminsdk-fbsvc@pwa-test-5lb-magazine.iam.gserviceaccount.com'
-          audience: 'https://iam.googleapis.com/projects/647376803938/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
 
       - name: Install Dependencies
         run: npm ci
