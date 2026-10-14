@@ -13,7 +13,6 @@ import {
   Circle,
   Lock,
   Info,
-  RotateCw,
   Smartphone,
   Loader2,
   Monitor
@@ -29,10 +28,7 @@ import {
   isAccadeOggiNotificationEnabled,
   setAccadeOggiNotificationEnabled,
   getLiveNotificationPermission,
-  getDetectedPlatform,
-  DetectedPlatform,
-  isAndroidDevice,
-  isStandalonePWA
+  getDetectedPlatform
 } from '../services/notificationService';
 import { formatItalianDate } from '../services/bloggerFeed';
 
@@ -57,7 +53,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
   const [permissionGuide, setPermissionGuide] = useState<PermissionGuideInfo | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
-  const [isReloading, setIsReloading] = useState(false);
   const detectedPlatform = getDetectedPlatform();
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [accadeOggiNotifEnabled, setAccadeOggiNotifEnabled] = useState(true);
@@ -69,25 +64,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     setSoundEnabled(localStorage.getItem('5lb_magazine_sound_enabled_v1') !== 'false');
     setAccadeOggiNotifEnabled(isAccadeOggiNotificationEnabled());
     return livePerm;
-  };
-
-  const handleRefreshOrReload = async () => {
-    setIsReloading(true);
-    const livePerm = await refreshList();
-
-    // Se il browser ha aggiornato lo stato dinamicamente, mostra l'esito senza ricaricare
-    if (livePerm !== permission && livePerm !== 'unsupported') {
-      setIsReloading(false);
-      return;
-    }
-
-    // Nei browser mobili (Android Chrome PWA e iOS Safari PWA), la proprietà
-    // Notification.permission rimane spesso congelata nella memoria della pagina
-    // finché l'app non viene ricaricata. Questo reload immediato sincronizza al 100%
-    // lo stato con il sistema operativo senza costringere l'utente a chiudere l'app a mano.
-    setTimeout(() => {
-      window.location.reload();
-    }, 200);
   };
 
   useEffect(() => {
@@ -503,44 +479,12 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                   </div>
                 )}
 
-                <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-950/40 border border-orange-200/70 dark:border-orange-900/50 text-[11px] text-orange-900 dark:text-orange-200 flex items-start gap-1.5">
-                  <RotateCw className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
-                  <span>Dopo aver modificato il permesso nel telefono o browser, tocca <strong>"Ricarica app per sincronizzare"</strong> per applicare subito il nuovo stato.</span>
+                <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-900/50 text-[11px] text-amber-900 dark:text-amber-200 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    <strong>Nota:</strong> una volta modificate le autorizzazioni nelle impostazioni del dispositivo, lo stato si aggiornerà automaticamente al <strong>prossimo avvio dell'applicazione</strong> (chiudi e riapri l'app).
+                  </p>
                 </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-                {permissionGuide.type === 'denied' && (
-                  <button
-                    type="button"
-                    disabled={isRequesting}
-                    onClick={handleRequestPermission}
-                    className="px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-[11px] font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
-                    title="Invia di nuovo la chiamata diretta al sistema"
-                  >
-                    {isRequesting ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Send className="w-3 h-3 text-rose-500" />
-                    )}
-                    <span>Riprova chiamata al sistema</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  disabled={isReloading}
-                  onClick={handleRefreshOrReload}
-                  className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-semibold text-[11px] transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-xs"
-                  title="Sincronizza subito i permessi ricaricando l'app"
-                >
-                  {isReloading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RotateCw className="w-3.5 h-3.5" />
-                  )}
-                  <span>Ricarica app per sincronizzare</span>
-                </button>
               </div>
             </div>
           )}
