@@ -318,9 +318,60 @@ export const Sidebar: React.FC<SidebarProps> = ({
               const active = isItemActive(item);
               const badge = getItemBadge(item);
 
+              if (f.id === 'filter-ultime') {
+                return (
+                  <div
+                    key={f.id}
+                    className={`w-full flex items-center justify-between px-5 py-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800/50 ${
+                      active ? 'bg-orange-50/80 dark:bg-orange-950/30 font-semibold' : ''
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleItemClick(item)}
+                      className="flex-1 flex items-center gap-4 text-left cursor-pointer min-w-0 py-0.5"
+                    >
+                      <span className="w-6 flex items-center justify-center shrink-0">
+                        {renderIcon(f.icon)}
+                      </span>
+                      <span
+                        className={`text-[0.9375rem] font-medium truncate ${
+                          active
+                            ? 'text-orange-600 dark:text-orange-400 font-semibold'
+                            : f.color
+                        }`}
+                      >
+                        {f.label}
+                      </span>
+                    </button>
+
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {typeof badge === 'number' && badge > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleItemClick(item)}
+                          className="text-sm font-semibold tabular-nums text-orange-600 dark:text-orange-400 cursor-pointer hover:underline"
+                        >
+                          {badge}
+                        </button>
+                      )}
+                      <BadgeNavPill
+                        totalArticles={totalCount}
+                        onClick={() => {
+                          if (onOpenBadgesModal) {
+                            onOpenBadgesModal();
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <button
                   key={f.id}
+                  type="button"
                   onClick={() => handleItemClick(item)}
                   className={`w-full flex items-center justify-between px-5 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer ${
                     active ? 'bg-orange-50/80 dark:bg-orange-950/30 font-semibold' : ''
@@ -343,33 +394,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   </div>
                   {typeof badge === 'number' && badge > 0 ? (
-                    f.id === 'filter-ultime' ? (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-sm font-semibold tabular-nums text-orange-600 dark:text-orange-400">
-                          {badge}
-                        </span>
-                        <BadgeNavPill
-                          totalArticles={totalCount}
-                          onClick={() => {
-                            if (onOpenBadgesModal) {
-                              onOpenBadgesModal();
-                            }
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <span
-                        className={`text-sm font-semibold tabular-nums ${
-                          f.id === 'filter-accade-oggi'
-                            ? 'text-sky-600 dark:text-sky-400 font-bold'
-                            : f.id === 'filter-non-letto'
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : 'text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {badge}
-                      </span>
-                    )
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        f.id === 'filter-accade-oggi'
+                          ? 'text-sky-600 dark:text-sky-400 font-bold'
+                          : f.id === 'filter-non-letto'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      {badge}
+                    </span>
                   ) : null}
                 </button>
               );

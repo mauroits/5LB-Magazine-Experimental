@@ -17,6 +17,8 @@ app.get('/api/feed', async (req, res) => {
     const startIndex = req.query['start-index'] || '1';
     const category = req.query['category'] as string | undefined;
     const q = req.query['q'] as string | undefined;
+    const publishedMin = req.query['published-min'] as string | undefined;
+    const publishedMax = req.query['published-max'] as string | undefined;
     const feedType = req.query['type'] as string | undefined;
 
     let targetUrl = feedType === 'pages'
@@ -28,6 +30,12 @@ app.get('/api/feed', async (req, res) => {
     }
     if (q) {
       targetUrl += `&q=${encodeURIComponent(q)}`;
+    }
+    if (publishedMin) {
+      targetUrl += `&published-min=${encodeURIComponent(publishedMin)}`;
+    }
+    if (publishedMax) {
+      targetUrl += `&published-max=${encodeURIComponent(publishedMax)}`;
     }
 
     const ifModifiedSince = req.headers['if-modified-since'];
@@ -69,6 +77,213 @@ app.get('/api/feed', async (req, res) => {
     return res.json(data);
   } catch (error: any) {
     console.error('Error fetching Blogger feed:', error);
+    return res.status(500).json({ error: error.message || 'Internal feed error' });
+  }
+});
+
+// Endpoint to fetch any single article or page by URL with multiple reliable strategies
+app.get('/api/post-by-url', async (req, res) => {
+  try {
+    const rawUrl = req.query.url as string | undefined;
+    if (!rawUrl) {
+      return res.status(400).json({ error: 'Missing url parameter' });
+    }
+
+    const trimmed = rawUrl.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(trimmed, 'https://magazine.5lb.eu');
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL format' });
+    }
+
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host !== 'magazine.5lb.eu') {
+      return res.status(400).json({ error: 'URL must belong to magazine.5lb.eu' });
+    }
+
+    const targetNorm = parsed.pathname.replace(/\/+$/, '').toLowerCase();
+    const isPage = targetNorm.startsWith('/p/');
+
+    // 1. Monographic pages (/p/...)
+    if (isPage) {
+      const pageFeedUrl = 'https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=50';
+      const pageRes = await fetch(pageFeedUrl, {
+        headers: {
+          'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+          Accept: 'application/json',
+        },
+      });
+      if (pageRes.ok) {
+        const pageData = await pageRes.json();
+        const entries: any[] = Array.isArray(pageData.feed?.entry)
+          ? pageData.feed.entry
+          : pageData.feed?.entry
+          ? [pageData.feed.entry]
+          : [];
+        const matched = entries.find((e) => {
+          const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+          if (!link) return false;
+          try {
+            return new URL(link, 'https://magazine.5lb.eu').pathname.replace(/\/+$/, '').toLowerCase() === targetNorm;
+          } catch {
+            return false;
+          }
+        });
+        if (matched) {
+          res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
+          return res.json({ entry: matched });
+        }
+      }
+    }
+
+    // 2. Regular posts - Strategy A: Fetch HTML to extract Blogger postId
+    const canonicalArticleUrl = `https://magazine.5lb.eu${parsed.pathname}`;
+    let html = '';
+    try {
+      const pageRes = await fetch(canonicalArticleUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      if (pageRes.ok) {
+        html = await pageRes.text();
+      }
+    } catch (e) {
+      console.warn('Could not fetch HTML directly:', e);
+    }
+
+    if (html) {
+      // Look for postId in script/data attributes
+      const postIdMatch =
+        html.match(/'postId':\s*'([0-9]+)'/) ||
+        html.match(/post-body-([0-9]+)/) ||
+        html.match(/data-post-id="([0-9]+)"/) ||
+        html.match(/blogId=[0-9]+&postId=([0-9]+)/) ||
+        html.match(/blogID=[0-9]+&postID=([0-9]+)/i);
+
+      if (postIdMatch && postIdMatch[1]) {
+        const postId = postIdMatch[1];
+        const postFeedUrl = `https://magazine.5lb.eu/feeds/posts/default/${postId}?alt=json`;
+        try {
+          const entryRes = await fetch(postFeedUrl, {
+            headers: {
+              'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+              Accept: 'application/json',
+            },
+          });
+          if (entryRes.ok) {
+            const entryData = await entryRes.json();
+            if (entryData?.entry) {
+              res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
+              return res.json({ entry: entryData.entry });
+            }
+          }
+        } catch (e) {
+          console.warn('Error fetching feed by postId:', e);
+        }
+      }
+    }
+
+    // 3. Strategy B: Query by publication month if URL has /YYYY/MM/
+    const dateMatch = targetNorm.match(/^\/([12][0-9]{3})\/([01][0-9])\//);
+    if (dateMatch) {
+      const year = parseInt(dateMatch[1], 10);
+      const month = parseInt(dateMatch[2], 10);
+      const startIso = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0)).toISOString();
+      const endIso = new Date(
+        Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1, 0, 0, 0)
+      ).toISOString();
+
+      const monthFeedUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&published-min=${encodeURIComponent(
+        startIso
+      )}&published-max=${encodeURIComponent(endIso)}&max-results=100`;
+      try {
+        const monthRes = await fetch(monthFeedUrl, {
+          headers: {
+            'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+            Accept: 'application/json',
+          },
+        });
+        if (monthRes.ok) {
+          const monthData = await monthRes.json();
+          const entries: any[] = Array.isArray(monthData.feed?.entry)
+            ? monthData.feed.entry
+            : monthData.feed?.entry
+            ? [monthData.feed.entry]
+            : [];
+          const matched = entries.find((e) => {
+            const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+            if (!link) return false;
+            try {
+              return (
+                new URL(link, 'https://magazine.5lb.eu').pathname.replace(/\/+$/, '').toLowerCase() ===
+                targetNorm
+              );
+            } catch {
+              return false;
+            }
+          });
+          if (matched) {
+            res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
+            return res.json({ entry: matched });
+          }
+        }
+      } catch (e) {
+        console.warn('Error fetching month feed:', e);
+      }
+    }
+
+    // 4. Strategy C: Construct entry from fetched HTML if available
+    if (html) {
+      const titleMatch =
+        html.match(/<h3 class=['"][^'"]*post-title[^'"]*['"][^>]*>([\s\S]*?)<\/h3>/i) ||
+        html.match(/<h1 class=['"][^'"]*post-title[^'"]*['"][^>]*>([\s\S]*?)<\/h1>/i) ||
+        html.match(/<title>([^<]+)<\/title>/i);
+      const title = titleMatch
+        ? titleMatch[1]
+            .replace(/<[^>]+>/g, '')
+            .replace(/[\r\n\t]+/g, ' ')
+            .replace(/\s*-\s*5LB Magazine\s*$/i, '')
+            .trim()
+        : '';
+
+      const contentMatch =
+        html.match(/<div class=['"][^'"]*post-body[^'"]*['"][^>]*>([\s\S]*?)<\/div>\s*<div class=['"][^'"]*post-footer/i) ||
+        html.match(/<div class=['"][^'"]*post-body[^'"]*['"][^>]*>([\s\S]*?)<\/div>/i);
+      const contentHtml = contentMatch ? contentMatch[1] : '';
+
+      const dateMatchHtml =
+        html.match(/class=['"][^'"]*published[^'"]*['"]\s+title=['"]([^'"]+)['"]/i) ||
+        html.match(/<abbr class=['"][^'"]*published[^'"]*['"][^>]*title=['"]([^'"]+)['"]/i) ||
+        html.match(/itemprop=['"]datePublished['"]\s+content=['"]([^'"]+)['"]/i);
+      const published = dateMatchHtml
+        ? dateMatchHtml[1]
+        : dateMatch
+        ? `${dateMatch[1]}-${dateMatch[2]}-01T12:00:00Z`
+        : new Date().toISOString();
+
+      if (title && contentHtml) {
+        const syntheticEntry = {
+          id: { $t: `synthetic-${canonicalArticleUrl}` },
+          title: { $t: title },
+          published: { $t: published },
+          updated: { $t: published },
+          content: { $t: contentHtml },
+          link: [{ rel: 'alternate', type: 'text/html', href: canonicalArticleUrl }],
+          author: [{ name: { $t: '5LB Magazine' } }],
+          category: [],
+        };
+        res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
+        return res.json({ entry: syntheticEntry });
+      }
+    }
+
+    return res.status(404).json({ error: 'Articolo non trovato su magazine.5lb.eu' });
+  } catch (error: any) {
+    console.error('Error in /api/post-by-url:', error);
     return res.status(500).json({ error: error.message || 'Internal feed error' });
   }
 });

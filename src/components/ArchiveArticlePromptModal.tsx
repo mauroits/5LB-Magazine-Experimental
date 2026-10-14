@@ -171,7 +171,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
             ) : (
               <p>
                 Il link selezionato fa parte delle pubblicazioni di <strong>magazine.5lb.eu</strong>.
-                Non è presente nel tuo archivio locale, puoi scaricato e salvarlo ora.
+                Non è presente nel tuo archivio locale, puoi scaricarlo e salvarlo ora.
               </p>
             )}
           </div>

@@ -255,7 +255,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                       className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full cursor-pointer hover:scale-105 transition-transform ${badge.badgeTag}`}
                       title="Clicca per visualizzare tutti i tuoi badge"
                     >
-                      L. {badge.level} • {badge.name}
+                      {badge.name}
                     </button>
                   );
                 }

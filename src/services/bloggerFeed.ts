@@ -594,7 +594,12 @@ function fetchBloggerScriptUrl(fullUrl: string): Promise<any> {
 
 /**
  * Scarica via RSS/Blogger API un singolo articolo partendo dal suo URL di magazine.5lb.eu.
- * Supporta sia post regolari (/20xx/...) che pagine monografiche (/p/...).
+ * Utilizza una pipeline di risoluzione a più livelli:
+ * 1. Risoluzione diretta ad alta precisione tramite endpoint backend /api/post-by-url (estrae postId da HTML)
+ * 2. Fallback per pagine monografiche (/p/...)
+ * 3. Fallback con filtro su intervallo temporale mese (published-min / published-max per post in /YYYY/MM/)
+ * 4. Fallback con ricerca full-text supportando sia parole separate da trattini sia notazione CamelCase
+ * 5. Fallback su cache locale se precedentemente sincronizzato
  */
 export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
   if (!url) throw new Error('URL non valida.');
@@ -602,11 +607,23 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
   const parsed = new URL(trimmedUrl, 'https://magazine.5lb.eu');
   const targetNorm = normalizeArticleUrl(parsed.href);
 
-  const isPage = targetNorm.startsWith('/p/');
-  let jsonResult: any = null;
+  // 1. Primaria e più potente: Risoluzione tramite endpoint dedicato /api/post-by-url
+  try {
+    const res = await fetch(`/api/post-by-url?url=${encodeURIComponent(trimmedUrl)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.entry) {
+        return parseBloggerEntry(data.entry);
+      }
+    }
+  } catch (err) {
+    console.warn('Risoluzione tramite /api/post-by-url non riuscita, procedo con fallback:', err);
+  }
 
+  // 2. Fallback per pagine monografiche (/p/...)
+  const isPage = targetNorm.startsWith('/p/');
   if (isPage) {
-    // 1. Prova via backend proxy
+    let jsonResult: any = null;
     try {
       const res = await fetch('/api/feed?type=pages&max-results=50');
       if (res.ok) jsonResult = await res.json();
@@ -614,7 +631,6 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
       // ignore
     }
 
-    // 2. Prova fetch diretto o JSONP
     if (!jsonResult || !jsonResult.feed) {
       try {
         const res = await fetch('https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=50');
@@ -639,9 +655,64 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
       }
     }
   } else {
-    // Post regolare di magazine.5lb.eu
+    // 3. Fallback per post regolari: Ricerca per mese di pubblicazione se l'URL contiene /YYYY/MM/
+    const dateMatch = targetNorm.match(/^\/([12][0-9]{3})\/([01][0-9])\//);
+    if (dateMatch) {
+      const year = parseInt(dateMatch[1], 10);
+      const month = parseInt(dateMatch[2], 10);
+      const startIso = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0)).toISOString();
+      const endIso = new Date(
+        Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1, 0, 0, 0)
+      ).toISOString();
+
+      let monthData: any = null;
+      try {
+        const res = await fetch(
+          `/api/feed?published-min=${encodeURIComponent(startIso)}&published-max=${encodeURIComponent(endIso)}&max-results=100`
+        );
+        if (res.ok) monthData = await res.json();
+      } catch {
+        // ignore
+      }
+
+      if (!monthData || !monthData.feed) {
+        try {
+          const directMonthUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&published-min=${encodeURIComponent(
+            startIso
+          )}&published-max=${encodeURIComponent(endIso)}&max-results=100`;
+          const res = await fetch(directMonthUrl);
+          if (res.ok) monthData = await res.json();
+        } catch {
+          try {
+            const scriptMonthUrl = `https://magazine.5lb.eu/feeds/posts/default?published-min=${encodeURIComponent(
+              startIso
+            )}&published-max=${encodeURIComponent(endIso)}&max-results=100`;
+            monthData = await fetchBloggerScriptUrl(scriptMonthUrl);
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (monthData?.feed?.entry) {
+        const entries: any[] = Array.isArray(monthData.feed.entry) ? monthData.feed.entry : [monthData.feed.entry];
+        const matched = entries.find((e) => {
+          const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+          return link && normalizeArticleUrl(link) === targetNorm;
+        });
+        if (matched) {
+          return parseBloggerEntry(matched);
+        }
+      }
+    }
+
+    // 4. Fallback: Ricerca per parole chiave (supportando sia trattini che notazione CamelCase)
     const filename = targetNorm.split('/').pop()?.replace(/\.html$/, '') || '';
-    const words = filename.split(/[-_]+/).filter((w) => w.length > 2);
+    const words = filename
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .split(/[-_\s]+/)
+      .filter((w) => w.length > 2);
+
     const searchQueries = [
       words.slice(0, 3).join(' '),
       words[0],
@@ -649,8 +720,7 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
     ].filter(Boolean);
 
     for (const q of searchQueries) {
-      jsonResult = null;
-      // Prova proxy locale
+      let jsonResult: any = null;
       try {
         const res = await fetch(`/api/feed?max-results=30&q=${encodeURIComponent(q)}`);
         if (res.ok) jsonResult = await res.json();
@@ -658,7 +728,6 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
         // ignore
       }
 
-      // Prova fetch diretto o JSONP
       if (!jsonResult || !jsonResult.feed) {
         try {
           const directUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=30&q=${encodeURIComponent(q)}`;
@@ -686,13 +755,13 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
     }
   }
 
-  // Se già in cache e la rete non trova o è offline, restituisci quello in cache
+  // 5. Se già in cache locale e la rete non trova o è offline, restituisci quello in cache
   const cached = findPostByUrl(trimmedUrl);
   if (cached) {
     return cached;
   }
 
-  throw new Error(`Impossibile scaricare l'articolo via RSS per "${trimmedUrl}".`);
+  throw new Error(`Impossibile scaricare l'articolo da magazine.5lb.eu per "${trimmedUrl}".`);
 }
 
 /**
