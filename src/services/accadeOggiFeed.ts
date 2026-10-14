@@ -2,14 +2,11 @@ import { BloggerPost } from '../types';
 import { FEED_SYNC_CONFIG } from '../config/syncConfig';
 import { getReadPostIds, getFavoritePostIds } from './bloggerFeed';
 
-export const ACCADE_OGGI_PRIMARY_URL =
-  'https://rss-bridge.org/bridge01/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
-export const ACCADE_OGGI_FALLBACK_URL =
-  'https://rss-bridge.ggc-project.de/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
-
 export const ACCADE_OGGI_MAX_POSTS = 15;
 const ACCADE_OGGI_CACHE_KEY = '5lb_accade_oggi_posts_v1';
 const ACCADE_OGGI_TIMESTAMP_KEY = '5lb_accade_oggi_timestamp_v1';
+const ACCADE_OGGI_ETAG_KEY = '5lb_accade_oggi_etag_v1';
+const ACCADE_OGGI_LAST_MOD_KEY = '5lb_accade_oggi_last_mod_v1';
 
 export function getAccadeOggiCacheTimestamp(): number {
   try {
@@ -179,16 +176,14 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
     }
   }
 
-  // Strictly cap at max 15 posts as requested
+  // Strictly cap at max 15 posts as required
   return posts.slice(0, ACCADE_OGGI_MAX_POSTS);
 }
 
 /**
- * Fetches the Accade Oggi RSS feed using multi-tier fallback:
- * 1. Local backend proxy endpoint /api/accade-oggi-feed (handles server-side fetch & fallback)
- * 2. Direct fetch to primary rss-bridge.org
- * 3. Direct fetch to fallback rss-bridge.ggc-project.de
- * 4. Public CORS proxy fallback for static environments
+ * Fetches the Accade Oggi RSS feed exclusively through our /api/accade-oggi-feed proxy.
+ * Sends conditional headers (ETag, If-Modified-Since) to handle 304 Not Modified.
+ * Never connects directly to rss-bridge or third-party providers.
  */
 export async function fetchAccadeOggiPosts(options?: {
   forceRefresh?: boolean;
@@ -207,10 +202,37 @@ export async function fetchAccadeOggiPosts(options?: {
     return cached;
   }
 
-  // Tier 1: Local /api/accade-oggi-feed Express proxy
+  // Call the proxy endpoint exclusively with conditional headers
   try {
-    const res = await fetch('/api/accade-oggi-feed');
+    const headers: Record<string, string> = {
+      Accept: 'application/atom+xml, application/xml, text/xml, */*',
+    };
+
+    if (!options?.forceRefresh) {
+      const savedEtag = localStorage.getItem(ACCADE_OGGI_ETAG_KEY);
+      const savedLastMod = localStorage.getItem(ACCADE_OGGI_LAST_MOD_KEY);
+      if (savedEtag) {
+        headers['If-None-Match'] = savedEtag;
+      }
+      if (savedLastMod) {
+        headers['If-Modified-Since'] = savedLastMod;
+      }
+    }
+
+    const res = await fetch('/api/accade-oggi-feed', { headers });
+
+    // 304 Not Modified: content has not changed, refresh cache timestamp and return local cache
+    if (res.status === 304 && cached.length > 0) {
+      saveAccadeOggiCacheTimestamp(Date.now());
+      return cached;
+    }
+
     if (res.ok) {
+      const newEtag = res.headers.get('ETag');
+      const newLastMod = res.headers.get('Last-Modified');
+      if (newEtag) localStorage.setItem(ACCADE_OGGI_ETAG_KEY, newEtag);
+      if (newLastMod) localStorage.setItem(ACCADE_OGGI_LAST_MOD_KEY, newLastMod);
+
       const xml = await res.text();
       const parsed = parseAtomXmlToPosts(xml);
       if (parsed.length > 0) {
@@ -219,58 +241,10 @@ export async function fetchAccadeOggiPosts(options?: {
       }
     }
   } catch (e) {
-    // Proxy unavailable (e.g. pure static deployment)
+    console.warn('Proxy /api/accade-oggi-feed non raggiungibile:', e);
   }
 
-  // Tier 2: Direct fetch to primary rss-bridge.org
-  try {
-    const res = await fetch(ACCADE_OGGI_PRIMARY_URL);
-    if (res.ok) {
-      const xml = await res.text();
-      const parsed = parseAtomXmlToPosts(xml);
-      if (parsed.length > 0) {
-        saveCachedAccadeOggiPosts(parsed);
-        return parsed;
-      }
-    }
-  } catch (e) {
-    // Primary failed or CORS blocked
-  }
-
-  // Tier 3: Direct fetch to fallback rss-bridge.ggc-project.de
-  try {
-    const res = await fetch(ACCADE_OGGI_FALLBACK_URL);
-    if (res.ok) {
-      const xml = await res.text();
-      const parsed = parseAtomXmlToPosts(xml);
-      if (parsed.length > 0) {
-        saveCachedAccadeOggiPosts(parsed);
-        return parsed;
-      }
-    }
-  } catch (e) {
-    // Fallback failed or CORS blocked
-  }
-
-  // Tier 4: Public CORS proxies
-  for (const feedUrl of [ACCADE_OGGI_PRIMARY_URL, ACCADE_OGGI_FALLBACK_URL]) {
-    try {
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
-      const res = await fetch(proxyUrl);
-      if (res.ok) {
-        const xml = await res.text();
-        const parsed = parseAtomXmlToPosts(xml);
-        if (parsed.length > 0) {
-          saveCachedAccadeOggiPosts(parsed);
-          return parsed;
-        }
-      }
-    } catch (e) {
-      // try next
-    }
-  }
-
-  // If network failed but cache exists, return cache
+  // Fallback to local cache if proxy call failed
   if (cached.length > 0) {
     return cached;
   }

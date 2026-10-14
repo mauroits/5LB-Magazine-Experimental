@@ -114,12 +114,12 @@ export default defineConfig(() => {
           importScripts: [`${base}sw-sync.js`],
           runtimeCaching: [
             {
-              urlPattern: /^https:\/\/magazine\.5lb\.eu\/feeds\/.*/i,
+              urlPattern: /\/api\/(feed|post|check-updates).*/i,
               handler: 'NetworkFirst',
               options: {
-                cacheName: '5lb-blogger-feeds',
+                cacheName: '5lb-proxy-feeds',
                 expiration: {
-                  maxEntries: 50,
+                  maxEntries: 100,
                   maxAgeSeconds: 60 * 60 * 24, // 24 hours
                 },
                 cacheableResponse: {
@@ -128,7 +128,7 @@ export default defineConfig(() => {
               },
             },
             {
-              urlPattern: /^(?:https:\/\/rss-bridge|\/api\/accade-oggi-feed).*/i,
+              urlPattern: /\/api\/accade-oggi-feed.*/i,
               handler: 'NetworkFirst',
               options: {
                 cacheName: '5lb-accade-oggi-feed',

@@ -8,6 +8,11 @@ const FEED_CACHE_KEY = '5lb_magazine_posts_cache_v1';
 const FEED_CACHE_TIMESTAMP_KEY = '5lb_magazine_feed_timestamp_v1';
 const READ_POSTS_KEY = '5lb_read_posts_v1';
 const FAVORITE_POSTS_KEY = '5lb_favorite_posts_v1';
+const FEED_ETAG_PREFIX = '5lb_feed_etag_';
+const FEED_LAST_MOD_PREFIX = '5lb_feed_last_mod_';
+
+// Maximum articles accumulated in local storage
+export const MAX_LOCAL_ARTICLES = 500;
 
 // Minimum interval between automatic background fetches from Blogger (configured in syncConfig.ts)
 export const FEED_CACHE_TTL_MS = FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
@@ -26,6 +31,38 @@ export function saveFeedCacheTimestamp(ts: number = Date.now()): void {
   try {
     localStorage.setItem(FEED_CACHE_TIMESTAMP_KEY, ts.toString());
   } catch (e) {
+    // ignore
+  }
+}
+
+function getFeedEtag(key: string): string | null {
+  try {
+    return localStorage.getItem(`${FEED_ETAG_PREFIX}${key}`);
+  } catch {
+    return null;
+  }
+}
+
+function saveFeedEtag(key: string, etag: string): void {
+  try {
+    localStorage.setItem(`${FEED_ETAG_PREFIX}${key}`, etag);
+  } catch {
+    // ignore
+  }
+}
+
+function getFeedLastMod(key: string): string | null {
+  try {
+    return localStorage.getItem(`${FEED_LAST_MOD_PREFIX}${key}`);
+  } catch {
+    return null;
+  }
+}
+
+function saveFeedLastMod(key: string, lastMod: string): void {
+  try {
+    localStorage.setItem(`${FEED_LAST_MOD_PREFIX}${key}`, lastMod);
+  } catch {
     // ignore
   }
 }
@@ -136,7 +173,7 @@ export function getCachedPosts(): BloggerPost[] {
     const raw = localStorage.getItem(FEED_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return parsed.slice(0, MAX_LOCAL_ARTICLES);
     }
   } catch (e) {
     console.warn('Errore lettura cache post:', e);
@@ -200,56 +237,10 @@ export function parseBloggerEntry(
 }
 
 /**
- * Fetch feed using Google Blogger's official JSONP protocol (alt=json-in-script).
- * Avoids browser CORS restrictions on static deployments (e.g. app.5lb.eu or GitHub Pages).
+ * Recupera i post del magazine passando esclusivamente dal server proxy /api/feed.
+ * Utilizza le intestazioni condizionali ETag e If-Modified-Since per ottenere risposte 304 Not Modified.
+ * Accumula gli articoli nel catalogo locale (fino a 500 post massimi).
  */
-function fetchBloggerJsonp(maxResults: number, startIndex: number = 1, category?: string, q?: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const cbName = `blogger_cb_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-    const script = document.createElement('script');
-
-    let fullUrl = category
-      ? `https://magazine.5lb.eu/feeds/posts/default/-/${encodeURIComponent(category)}?alt=json-in-script&callback=${cbName}&max-results=${maxResults}&start-index=${startIndex}`
-      : `https://magazine.5lb.eu/feeds/posts/default?alt=json-in-script&callback=${cbName}&max-results=${maxResults}&start-index=${startIndex}`;
-
-    if (q) {
-      fullUrl += `&q=${encodeURIComponent(q)}`;
-    }
-
-    script.src = fullUrl;
-    script.async = true;
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout durante il download dei feed da Blogger (JSONP)'));
-    }, 15000);
-
-    const cleanup = () => {
-      clearTimeout(timer);
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-      try {
-        delete (window as any)[cbName];
-      } catch (e) {
-        (window as any)[cbName] = undefined;
-      }
-    };
-
-    (window as any)[cbName] = (data: any) => {
-      cleanup();
-      resolve(data);
-    };
-
-    script.onerror = () => {
-      cleanup();
-      reject(new Error('Errore di rete durante il caricamento del feed Blogger'));
-    };
-
-    document.head.appendChild(script);
-  });
-}
-
 export async function fetchBloggerPosts(options?: {
   maxResults?: number;
   startIndex?: number;
@@ -263,11 +254,11 @@ export async function fetchBloggerPosts(options?: {
   const q = options?.q;
   const forceRefresh = options?.forceRefresh || false;
 
-  // Check cached data
+  // Carica gli articoli accumulati in locale
   let cachedPosts: BloggerPost[] = getCachedPosts();
 
-  // If offline and have cache, return cache immediately
-  if (!navigator.onLine && cachedPosts.length > 0) {
+  // Se l'utente è offline e abbiamo la cache locale, rispondi subito
+  if (typeof navigator !== 'undefined' && !navigator.onLine && cachedPosts.length > 0) {
     let filtered = applyFilter(cachedPosts, category);
     if (q) {
       filtered = filtered.filter((p) => postMatchesExactPhrase(p, q));
@@ -279,8 +270,7 @@ export async function fetchBloggerPosts(options?: {
     };
   }
 
-  // Sustainable rate check: if fetching general feed (page 1) without explicit forceRefresh,
-  // return cache if it was updated recently (< FEED_CACHE_TTL_MS, 15 min) to prevent repeated calls
+  // Se è la pagina 1 del feed generale e la cache è recente, evita chiamate ridondanti
   if (!forceRefresh && !category && !q && startIndex === 1 && cachedPosts.length > 0) {
     const lastFetch = getFeedCacheTimestamp();
     const isCacheFresh = lastFetch > 0 && Date.now() - lastFetch < FEED_CACHE_TTL_MS;
@@ -293,20 +283,19 @@ export async function fetchBloggerPosts(options?: {
     }
   }
 
-  // If forceRefresh is requested on general feed, clear cache entry
+  // Se è richiesto un forceRefresh sul feed generale, reimposta i timestamp
   if (forceRefresh && !category && !q && startIndex === 1) {
     try {
-      localStorage.removeItem(FEED_CACHE_KEY);
       localStorage.removeItem(FEED_CACHE_TIMESTAMP_KEY);
-      cachedPosts = [];
     } catch (e) {
       // ignore
     }
   }
 
   let jsonResult: any = null;
+  const cacheKey = `${category || 'all'}_${q || 'all'}_${startIndex}_${maxResults}`;
 
-  // Method 1: Try local backend proxy /api/feed (fast on full-stack dev/server)
+  // Esecuzione esclusiva tramite il nostro endpoint proxy /api/feed
   try {
     let proxyUrl = category
       ? `/api/feed?max-results=${maxResults}&start-index=${startIndex}&category=${encodeURIComponent(category)}`
@@ -317,16 +306,27 @@ export async function fetchBloggerPosts(options?: {
     }
 
     const fetchHeaders: Record<string, string> = { Accept: 'application/json' };
-    if (!category && !q && startIndex === 1 && cachedPosts.length > 0 && cachedPosts[0].published && !forceRefresh) {
-      fetchHeaders['If-Modified-Since'] = new Date(cachedPosts[0].published).toUTCString();
+
+    if (!forceRefresh) {
+      const savedEtag = getFeedEtag(cacheKey);
+      const savedLastMod = getFeedLastMod(cacheKey);
+      if (savedEtag) fetchHeaders['If-None-Match'] = savedEtag;
+      if (savedLastMod) {
+        fetchHeaders['If-Modified-Since'] = savedLastMod;
+      } else if (!category && !q && startIndex === 1 && cachedPosts.length > 0 && cachedPosts[0].published) {
+        fetchHeaders['If-Modified-Since'] = new Date(cachedPosts[0].published).toUTCString();
+      }
     }
 
     const res = await fetch(proxyUrl, { headers: fetchHeaders });
 
-    // Handle 304 Not Modified -> Feed is completely up to date! Return cached posts immediately
+    // Risposta 304 Not Modified: il feed non è cambiato, usa la cache locale
     if (res.status === 304 && cachedPosts.length > 0) {
       saveFeedCacheTimestamp(Date.now());
       let filtered = applyFilter(cachedPosts, category);
+      if (q) {
+        filtered = filtered.filter((p) => postMatchesExactPhrase(p, q));
+      }
       return {
         posts: filtered.slice(startIndex - 1, startIndex - 1 + maxResults),
         totalResults: filtered.length,
@@ -334,44 +334,22 @@ export async function fetchBloggerPosts(options?: {
       };
     }
 
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      jsonResult = await res.json();
-    }
-  } catch (e) {
-    // Proxy not available (static hosting like app.5lb.eu or GitHub Pages)
-  }
+    if (res.ok) {
+      const newEtag = res.headers.get('ETag');
+      const newLastMod = res.headers.get('Last-Modified');
+      if (newEtag) saveFeedEtag(cacheKey, newEtag);
+      if (newLastMod) saveFeedLastMod(cacheKey, newLastMod);
 
-  // Method 2: If proxy not available or failed, use native Blogger JSONP (100% CORS-free client side)
-  if (!jsonResult || !jsonResult.feed) {
-    try {
-      jsonResult = await fetchBloggerJsonp(maxResults, startIndex, category, q);
-    } catch (errJsonp) {
-      console.warn('Blogger JSONP fetch failed, trying direct fetch:', errJsonp);
-    }
-  }
-
-  // Method 3: Fallback to direct fetch
-  if (!jsonResult || !jsonResult.feed) {
-    try {
-      let directBloggerUrl = category
-        ? `https://magazine.5lb.eu/feeds/posts/default/-/${encodeURIComponent(category)}?alt=json&max-results=${maxResults}&start-index=${startIndex}`
-        : `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
-
-      if (q) {
-        directBloggerUrl += `&q=${encodeURIComponent(q)}`;
-      }
-
-      const res = await fetch(directBloggerUrl);
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
         jsonResult = await res.json();
       }
-    } catch (errDirect) {
-      console.warn('Direct Blogger fetch failed:', errDirect);
     }
+  } catch (e) {
+    console.warn('Proxy /api/feed non raggiungibile:', e);
   }
 
-  // If network failed but we have cache, fallback gracefully
+  // Se la rete fallisce o non ha restituito dati validi, ripiega sulla cache locale
   if (!jsonResult || !jsonResult.feed) {
     if (cachedPosts.length > 0) {
       let filtered = applyFilter(cachedPosts, category);
@@ -394,7 +372,7 @@ export async function fetchBloggerPosts(options?: {
   const readIds = getReadPostIds();
   const favIds = getFavoritePostIds();
 
-  // Filter entries based on PUBLICATION_DELAY_HOURS to give author time to finalize URLs
+  // Filtra i post con ritardo di sicurezza di 2 ore
   const now = Date.now();
   const delayMs = (PUBLICATION_DELAY_HOURS || 0) * 60 * 60 * 1000;
   const cutoffTime = now - delayMs;
@@ -412,30 +390,34 @@ export async function fetchBloggerPosts(options?: {
     parseBloggerEntry(entry, readIds, favIds)
   );
 
-  // Merge and update cached posts in localStorage for general feed
-  if (!category) {
-    try {
-      let merged = [...cachedPosts];
-      for (const post of parsedPosts) {
-        const existingIdx = merged.findIndex((p) => p.id === post.id);
-        if (existingIdx >= 0) {
-          merged[existingIdx] = post;
-        } else {
-          merged.push(post);
-        }
+  // Accumula gli articoli nella cache locale (fino a 500 post massimi)
+  try {
+    let merged = [...cachedPosts];
+    for (const post of parsedPosts) {
+      const existingIdx = merged.findIndex((p) => p.id === post.id);
+      if (existingIdx >= 0) {
+        // Mantieni stato di lettura e preferiti già esistenti
+        merged[existingIdx] = {
+          ...post,
+          isRead: merged[existingIdx].isRead ?? post.isRead,
+          isFavorite: merged[existingIdx].isFavorite ?? post.isFavorite,
+        };
+      } else {
+        merged.push(post);
       }
-      // Keep sorted by publication date descending with id tiebreaker for stable deterministic ordering
-      merged.sort((a, b) => {
-        const diff = new Date(b.published).getTime() - new Date(a.published).getTime();
-        if (diff !== 0) return diff;
-        return b.id.localeCompare(a.id);
-      });
-      localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(merged.slice(0, 600)));
-      saveFeedCacheTimestamp(Date.now());
-      syncNewestPostWithSW(merged).catch(() => {});
-    } catch (e) {
-      console.warn('LocalStorage pieno per la cache dei post:', e);
     }
+    // Ordina decrescente per data di pubblicazione con spareggio univoco su ID
+    merged.sort((a, b) => {
+      const diff = new Date(b.published).getTime() - new Date(a.published).getTime();
+      if (diff !== 0) return diff;
+      return b.id.localeCompare(a.id);
+    });
+
+    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(merged.slice(0, MAX_LOCAL_ARTICLES)));
+    saveFeedCacheTimestamp(Date.now());
+    syncNewestPostWithSW(merged).catch(() => {});
+  } catch (e) {
+    console.warn('LocalStorage pieno per la cache dei post:', e);
   }
 
   const hasMore = totalResults > 0
@@ -449,7 +431,7 @@ export async function fetchBloggerPosts(options?: {
   };
 }
 
-// Search the entire online Blogger archive by query
+// Search the entire online Blogger archive by query via proxy
 export async function searchBloggerArchive(
   query: string,
   maxResults = 30
@@ -551,55 +533,56 @@ export function findPostByUrl(url: string, posts?: BloggerPost[]): BloggerPost |
 }
 
 /**
- * Esegue il fetch da Blogger usando uno script JSONP diretto con callback casuale.
+ * Scarica un singolo articolo tramite il suo ID Blogger passando esclusivamente dal proxy /api/post.
+ * Utilizza le intestazioni ETag e If-Modified-Since per controlli condizionali.
  */
-function fetchBloggerScriptUrl(fullUrl: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const cbName = `blogger_cb_direct_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-    const script = document.createElement('script');
-    const separator = fullUrl.includes('?') ? '&' : '?';
-    script.src = `${fullUrl}${separator}alt=json-in-script&callback=${cbName}`;
-    script.async = true;
+export async function fetchPostById(postId: string): Promise<BloggerPost> {
+  if (!postId) throw new Error('Post ID non valido.');
 
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout durante la richiesta diretta a Blogger'));
-    }, 15000);
+  const cachedPosts = getCachedPosts();
+  const localCached = cachedPosts.find((p) => p.id === postId);
 
-    const cleanup = () => {
-      clearTimeout(timer);
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
+  const fetchHeaders: Record<string, string> = { Accept: 'application/json' };
+  const savedEtag = getFeedEtag(`post_id_${postId}`);
+  const savedLastMod = getFeedLastMod(`post_id_${postId}`);
+  if (savedEtag) fetchHeaders['If-None-Match'] = savedEtag;
+  if (savedLastMod) fetchHeaders['If-Modified-Since'] = savedLastMod;
+
+  try {
+    const res = await fetch(`/api/post?id=${encodeURIComponent(postId)}`, { headers: fetchHeaders });
+    if (res.status === 304 && localCached) {
+      return localCached;
+    }
+    if (res.ok) {
+      const newEtag = res.headers.get('ETag');
+      const newLastMod = res.headers.get('Last-Modified');
+      if (newEtag) saveFeedEtag(`post_id_${postId}`, newEtag);
+      if (newLastMod) saveFeedLastMod(`post_id_${postId}`, newLastMod);
+
+      const data = await res.json();
+      if (data?.entry) {
+        return parseBloggerEntry(data.entry);
       }
-      try {
-        delete (window as any)[cbName];
-      } catch {
-        (window as any)[cbName] = undefined;
-      }
-    };
+    }
+  } catch (err) {
+    console.warn('Errore fetchPostById via proxy:', err);
+  }
 
-    (window as any)[cbName] = (data: any) => {
-      cleanup();
-      resolve(data);
-    };
+  if (localCached) {
+    return localCached;
+  }
 
-    script.onerror = () => {
-      cleanup();
-      reject(new Error('Errore di connessione a Blogger'));
-    };
-
-    document.head.appendChild(script);
-  });
+  throw new Error(`Impossibile scaricare l'articolo con ID ${postId}.`);
 }
 
 /**
- * Scarica via RSS/Blogger API un singolo articolo partendo dal suo URL di magazine.5lb.eu.
- * Utilizza una pipeline di risoluzione a più livelli:
- * 1. Risoluzione diretta ad alta precisione tramite endpoint backend /api/post-by-url (estrae postId da HTML)
- * 2. Fallback per pagine monografiche (/p/...)
- * 3. Fallback con filtro su intervallo temporale mese (published-min / published-max per post in /YYYY/MM/)
- * 4. Fallback con ricerca full-text supportando sia parole separate da trattini sia notazione CamelCase
- * 5. Fallback su cache locale se precedentemente sincronizzato
+ * Scarica un singolo articolo partendo dal suo URL di magazine.5lb.eu.
+ * Passa esclusivamente dal nostro proxy server.ts:
+ * 1. Risoluzione primaria via /api/post-by-url con supporto ETag / If-Modified-Since
+ * 2. Fallback per pagine monografiche (/p/...) tramite proxy /api/feed?type=pages
+ * 3. Fallback per post per mese tramite proxy /api/feed?published-min=...
+ * 4. Fallback per ricerca per parole chiave tramite proxy /api/feed?q=...
+ * 5. Fallback finale sulla cache locale
  */
 export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
   if (!url) throw new Error('URL non valida.');
@@ -607,55 +590,59 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
   const parsed = new URL(trimmedUrl, 'https://magazine.5lb.eu');
   const targetNorm = normalizeArticleUrl(parsed.href);
 
-  // 1. Primaria e più potente: Risoluzione tramite endpoint dedicato /api/post-by-url
+  // Controlla prima se è già presente nella cache locale
+  const localCached = findPostByUrl(trimmedUrl);
+
+  const fetchHeaders: Record<string, string> = { Accept: 'application/json' };
+  const savedEtag = getFeedEtag(`post_url_${targetNorm}`);
+  const savedLastMod = getFeedLastMod(`post_url_${targetNorm}`);
+  if (savedEtag) fetchHeaders['If-None-Match'] = savedEtag;
+  if (savedLastMod) fetchHeaders['If-Modified-Since'] = savedLastMod;
+
+  // 1. Risoluzione primaria ad alta precisione tramite endpoint backend /api/post-by-url
   try {
-    const res = await fetch(`/api/post-by-url?url=${encodeURIComponent(trimmedUrl)}`);
+    const res = await fetch(`/api/post-by-url?url=${encodeURIComponent(trimmedUrl)}`, { headers: fetchHeaders });
+    if (res.status === 304 && localCached) {
+      return localCached;
+    }
     if (res.ok) {
+      const newEtag = res.headers.get('ETag');
+      const newLastMod = res.headers.get('Last-Modified');
+      if (newEtag) saveFeedEtag(`post_url_${targetNorm}`, newEtag);
+      if (newLastMod) saveFeedLastMod(`post_url_${targetNorm}`, newLastMod);
+
       const data = await res.json();
       if (data?.entry) {
         return parseBloggerEntry(data.entry);
       }
     }
   } catch (err) {
-    console.warn('Risoluzione tramite /api/post-by-url non riuscita, procedo con fallback:', err);
+    console.warn('Risoluzione tramite /api/post-by-url non riuscita, procedo con fallback via proxy:', err);
   }
 
-  // 2. Fallback per pagine monografiche (/p/...)
+  // 2. Fallback per pagine monografiche (/p/...) via proxy /api/feed
   const isPage = targetNorm.startsWith('/p/');
   if (isPage) {
-    let jsonResult: any = null;
     try {
       const res = await fetch('/api/feed?type=pages&max-results=50');
-      if (res.ok) jsonResult = await res.json();
+      if (res.ok) {
+        const jsonResult = await res.json();
+        if (jsonResult?.feed?.entry) {
+          const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
+          const matched = entries.find((e) => {
+            const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+            return link && normalizeArticleUrl(link) === targetNorm;
+          });
+          if (matched) {
+            return parseBloggerEntry(matched);
+          }
+        }
+      }
     } catch {
       // ignore
     }
-
-    if (!jsonResult || !jsonResult.feed) {
-      try {
-        const res = await fetch('https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=50');
-        if (res.ok) jsonResult = await res.json();
-      } catch {
-        try {
-          jsonResult = await fetchBloggerScriptUrl('https://magazine.5lb.eu/feeds/pages/default?max-results=50');
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    if (jsonResult?.feed?.entry) {
-      const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
-      const matched = entries.find((e) => {
-        const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
-        return link && normalizeArticleUrl(link) === targetNorm;
-      });
-      if (matched) {
-        return parseBloggerEntry(matched);
-      }
-    }
   } else {
-    // 3. Fallback per post regolari: Ricerca per mese di pubblicazione se l'URL contiene /YYYY/MM/
+    // 3. Fallback per post regolari: Ricerca per mese di pubblicazione se l'URL contiene /YYYY/MM/ via proxy /api/feed
     const dateMatch = targetNorm.match(/^\/([12][0-9]{3})\/([01][0-9])\//);
     if (dateMatch) {
       const year = parseInt(dateMatch[1], 10);
@@ -665,48 +652,29 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
         Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1, 0, 0, 0)
       ).toISOString();
 
-      let monthData: any = null;
       try {
         const res = await fetch(
           `/api/feed?published-min=${encodeURIComponent(startIso)}&published-max=${encodeURIComponent(endIso)}&max-results=100`
         );
-        if (res.ok) monthData = await res.json();
+        if (res.ok) {
+          const monthData = await res.json();
+          if (monthData?.feed?.entry) {
+            const entries: any[] = Array.isArray(monthData.feed.entry) ? monthData.feed.entry : [monthData.feed.entry];
+            const matched = entries.find((e) => {
+              const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+              return link && normalizeArticleUrl(link) === targetNorm;
+            });
+            if (matched) {
+              return parseBloggerEntry(matched);
+            }
+          }
+        }
       } catch {
         // ignore
       }
-
-      if (!monthData || !monthData.feed) {
-        try {
-          const directMonthUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&published-min=${encodeURIComponent(
-            startIso
-          )}&published-max=${encodeURIComponent(endIso)}&max-results=100`;
-          const res = await fetch(directMonthUrl);
-          if (res.ok) monthData = await res.json();
-        } catch {
-          try {
-            const scriptMonthUrl = `https://magazine.5lb.eu/feeds/posts/default?published-min=${encodeURIComponent(
-              startIso
-            )}&published-max=${encodeURIComponent(endIso)}&max-results=100`;
-            monthData = await fetchBloggerScriptUrl(scriptMonthUrl);
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (monthData?.feed?.entry) {
-        const entries: any[] = Array.isArray(monthData.feed.entry) ? monthData.feed.entry : [monthData.feed.entry];
-        const matched = entries.find((e) => {
-          const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
-          return link && normalizeArticleUrl(link) === targetNorm;
-        });
-        if (matched) {
-          return parseBloggerEntry(matched);
-        }
-      }
     }
 
-    // 4. Fallback: Ricerca per parole chiave (supportando sia trattini che notazione CamelCase)
+    // 4. Fallback: Ricerca per parole chiave via proxy /api/feed
     const filename = targetNorm.split('/').pop()?.replace(/\.html$/, '') || '';
     const words = filename
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -720,45 +688,30 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
     ].filter(Boolean);
 
     for (const q of searchQueries) {
-      let jsonResult: any = null;
       try {
         const res = await fetch(`/api/feed?max-results=30&q=${encodeURIComponent(q)}`);
-        if (res.ok) jsonResult = await res.json();
-      } catch {
-        // ignore
-      }
-
-      if (!jsonResult || !jsonResult.feed) {
-        try {
-          const directUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=30&q=${encodeURIComponent(q)}`;
-          const res = await fetch(directUrl);
-          if (res.ok) jsonResult = await res.json();
-        } catch {
-          try {
-            jsonResult = await fetchBloggerJsonp(30, 1, undefined, q);
-          } catch {
-            // ignore
+        if (res.ok) {
+          const jsonResult = await res.json();
+          if (jsonResult?.feed?.entry) {
+            const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
+            const matched = entries.find((e) => {
+              const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
+              return link && normalizeArticleUrl(link) === targetNorm;
+            });
+            if (matched) {
+              return parseBloggerEntry(matched);
+            }
           }
         }
-      }
-
-      if (jsonResult?.feed?.entry) {
-        const entries: any[] = Array.isArray(jsonResult.feed.entry) ? jsonResult.feed.entry : [jsonResult.feed.entry];
-        const matched = entries.find((e) => {
-          const link = e.link?.find((l: any) => l.rel === 'alternate')?.href;
-          return link && normalizeArticleUrl(link) === targetNorm;
-        });
-        if (matched) {
-          return parseBloggerEntry(matched);
-        }
+      } catch {
+        // ignore
       }
     }
   }
 
   // 5. Se già in cache locale e la rete non trova o è offline, restituisci quello in cache
-  const cached = findPostByUrl(trimmedUrl);
-  if (cached) {
-    return cached;
+  if (localCached) {
+    return localCached;
   }
 
   throw new Error(`Impossibile scaricare l'articolo da magazine.5lb.eu per "${trimmedUrl}".`);
@@ -768,7 +721,7 @@ export async function fetchPostByUrl(url: string): Promise<BloggerPost> {
  * Salva o aggiorna un articolo nella cache locale e aggiorna la persistenza:
  * - Se già esistente (stesso id o stesso pathname link): aggiorna i campi mantenendo isRead e isFavorite.
  * - Se nuovo: inserisce l'articolo e mantiene l'ordinamento decrescente per data di pubblicazione.
- * Restituisce l'array aggiornato e un flag isUpdate (true se già presente, false se nuovo).
+ * - Limita la dimensione complessiva a massimo 500 articoli.
  */
 export function saveOrUpdatePostInCache(
   post: BloggerPost,
@@ -819,15 +772,15 @@ export function saveOrUpdatePostInCache(
     return b.id.localeCompare(a.id);
   });
 
+  const capped = updatedPosts.slice(0, MAX_LOCAL_ARTICLES);
+
   try {
-    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(updatedPosts.slice(0, 600)));
+    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(capped));
     saveFeedCacheTimestamp(Date.now());
-    syncNewestPostWithSW(updatedPosts).catch(() => {});
+    syncNewestPostWithSW(capped).catch(() => {});
   } catch (e) {
     console.warn('LocalStorage pieno per la cache dei post:', e);
   }
 
-  return { updatedPosts, isUpdate, post: finalPost };
+  return { updatedPosts: capped, isUpdate, post: finalPost };
 }
-
-

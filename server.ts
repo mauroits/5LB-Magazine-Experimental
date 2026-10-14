@@ -1,6 +1,9 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -10,22 +13,272 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
 
-// Blogger Feed Proxy endpoint
-app.get('/api/feed', async (req, res) => {
-  try {
-    const maxResults = req.query['max-results'] || '15';
-    const startIndex = req.query['start-index'] || '1';
-    const category = req.query['category'] as string | undefined;
-    const q = req.query['q'] as string | undefined;
-    const publishedMin = req.query['published-min'] as string | undefined;
-    const publishedMax = req.query['published-max'] as string | undefined;
-    const feedType = req.query['type'] as string | undefined;
+// ============================================================================
+// CACHE SYSTEM CONFIGURATION & TTLs
+// ============================================================================
+// Magazine articles update rarely (~2 articles per month).
+// "Accade Oggi" social page updates daily (1-2 times, usually in the morning).
+const TTL_MAGAZINE_ARTICLE_MS = 24 * 60 * 60 * 1000; // 24 hours for single articles
+const TTL_MAGAZINE_PAGES_MS = 24 * 60 * 60 * 1000;   // 24 hours for monographic pages
+const TTL_MAGAZINE_ARCHIVE_MS = 12 * 60 * 60 * 1000; // 12 hours for searches / categories / pagination
+const TTL_MAGAZINE_FEED_MS = 4 * 60 * 60 * 1000;     // 4 hours for home feed (page 1)
+const TTL_MAGAZINE_UPDATES_MS = 30 * 60 * 1000;      // 30 min for check-updates
+const TTL_TELEGRAM_MS = 5 * 60 * 1000;               // 5 min for Telegram iframe
 
-    let targetUrl = feedType === 'pages'
+/**
+ * Accade Oggi dynamic TTL:
+ * In Italy (Europe/Rome timezone), posts arrive typically between 07:00 and 13:59.
+ * Morning TTL: 25 minutes (catches updates quickly without hitting bridge rate limits).
+ * Afternoon/Night TTL: 60 minutes.
+ */
+function getAccadeOggiTTL(): number {
+  try {
+    const romeHourStr = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Rome',
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(new Date());
+    const hour = parseInt(romeHourStr, 10);
+    if (hour >= 7 && hour < 14) {
+      return 25 * 60 * 1000;
+    }
+  } catch {
+    // fallback if Intl timezone is not available
+  }
+  return 60 * 60 * 1000;
+}
+
+// ============================================================================
+// IN-MEMORY & OPTIONAL DISK-PERSISTED CACHE STORE
+// ============================================================================
+export interface CacheEntry {
+  body: string;
+  contentType: string;
+  etag: string;
+  lastModified?: string;
+  cachedAt: number;
+  expiresAt: number;
+  ttlMs: number;
+}
+
+class ProxyCacheStore {
+  private cache = new Map<string, CacheEntry>();
+  private readonly maxItems = 1000;
+  private readonly cacheDir = path.resolve(__dirname, '.cache');
+  private readonly cacheFile = path.resolve(__dirname, '.cache', 'rss-proxy-cache.json');
+
+  constructor() {
+    this.loadFromDisk();
+    // Prune expired entries every 15 minutes
+    setInterval(() => this.prune(), 15 * 60 * 1000).unref();
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.cacheFile)) {
+        const raw = fs.readFileSync(this.cacheFile, 'utf-8');
+        const data = JSON.parse(raw);
+        if (Array.isArray(data)) {
+          const now = Date.now();
+          for (const [key, entry] of data) {
+            // Restore entry if not horribly expired (> 7 days)
+            if (entry && entry.expiresAt > now - 7 * 24 * 60 * 60 * 1000) {
+              this.cache.set(key, entry);
+            }
+          }
+          console.log(`📦 Cache preloaded with ${this.cache.size} entries from disk.`);
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not load cache from disk:', err);
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+      }
+      const data = Array.from(this.cache.entries()).slice(-500);
+      fs.writeFileSync(this.cacheFile, JSON.stringify(data), 'utf-8');
+    } catch {
+      // Ignore disk write errors in read-only / ephemeral environments
+    }
+  }
+
+  get(key: string): (CacheEntry & { isFresh: boolean }) | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    const isFresh = Date.now() < entry.expiresAt;
+    return { ...entry, isFresh };
+  }
+
+  set(
+    key: string,
+    data: {
+      body: string;
+      contentType: string;
+      etag: string;
+      lastModified?: string;
+      ttlMs: number;
+    }
+  ): CacheEntry {
+    const now = Date.now();
+    const entry: CacheEntry = {
+      body: data.body,
+      contentType: data.contentType,
+      etag: data.etag,
+      lastModified: data.lastModified,
+      cachedAt: now,
+      expiresAt: now + data.ttlMs,
+      ttlMs: data.ttlMs,
+    };
+
+    if (this.cache.size >= this.maxItems) {
+      // Evict oldest entry
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+
+    this.cache.set(key, entry);
+    // Debounced disk save
+    this.scheduleSave();
+    return entry;
+  }
+
+  renew(key: string, ttlMs: number): void {
+    const entry = this.cache.get(key);
+    if (entry) {
+      entry.cachedAt = Date.now();
+      entry.expiresAt = Date.now() + ttlMs;
+      entry.ttlMs = ttlMs;
+      this.cache.set(key, entry);
+    }
+  }
+
+  has(key: string): boolean {
+    return this.cache.has(key);
+  }
+
+  private saveTimer: NodeJS.Timeout | null = null;
+  private scheduleSave(): void {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveToDisk();
+    }, 5000);
+  }
+
+  private prune(): void {
+    const now = Date.now();
+    for (const [k, v] of this.cache.entries()) {
+      if (now > v.expiresAt + 24 * 60 * 60 * 1000) {
+        this.cache.delete(k);
+      }
+    }
+  }
+}
+
+const cacheStore = new ProxyCacheStore();
+
+// ============================================================================
+// HTTP CONDITIONAL HEADER UTILITIES (ETag & If-Modified-Since)
+// ============================================================================
+function computeETag(body: string | Buffer): string {
+  const hash = crypto.createHash('md5').update(body).digest('hex');
+  return `"${hash}"`;
+}
+
+function matchesConditionalHeaders(
+  req: express.Request,
+  etag?: string,
+  lastModified?: string
+): boolean {
+  const ifNoneMatch = req.headers['if-none-match'];
+  if (ifNoneMatch && etag) {
+    const rawEtag = etag.replace(/^W\//, '').replace(/"/g, '');
+    const clientEtags = ifNoneMatch
+      .split(',')
+      .map((t) => t.trim().replace(/^W\//, '').replace(/"/g, ''));
+    if (clientEtags.includes('*') || clientEtags.includes(rawEtag)) {
+      return true;
+    }
+  }
+
+  const ifModifiedSince = req.headers['if-modified-since'];
+  if (ifModifiedSince && lastModified) {
+    const clientTime = Date.parse(ifModifiedSince);
+    const serverTime = Date.parse(lastModified);
+    if (!isNaN(clientTime) && !isNaN(serverTime) && serverTime <= clientTime) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function sendCachedResponse(
+  req: express.Request,
+  res: express.Response,
+  entry: CacheEntry,
+  cacheStatus: 'HIT' | 'HIT-REVALIDATED' | 'MISS' | 'STALE-FALLBACK'
+) {
+  const ttlSec = Math.max(60, Math.floor(entry.ttlMs / 1000));
+  const swrSec = ttlSec * 2;
+
+  res.setHeader('ETag', entry.etag);
+  if (entry.lastModified) {
+    res.setHeader('Last-Modified', entry.lastModified);
+  }
+  res.setHeader('Cache-Control', `public, max-age=${ttlSec}, stale-while-revalidate=${swrSec}`);
+  res.setHeader('X-Cache', cacheStatus);
+
+  if (matchesConditionalHeaders(req, entry.etag, entry.lastModified)) {
+    return res.status(304).end();
+  }
+
+  res.setHeader('Content-Type', entry.contentType);
+  return res.status(200).send(entry.body);
+}
+
+// ============================================================================
+// API ROUTES
+// ============================================================================
+
+// 1. Blogger Feed Proxy endpoint
+app.get('/api/feed', async (req, res) => {
+  const maxResults = (req.query['max-results'] as string) || '15';
+  const startIndex = (req.query['start-index'] as string) || '1';
+  const category = req.query['category'] as string | undefined;
+  const q = req.query['q'] as string | undefined;
+  const publishedMin = req.query['published-min'] as string | undefined;
+  const publishedMax = req.query['published-max'] as string | undefined;
+  const feedType = req.query['type'] as string | undefined;
+
+  const isPages = feedType === 'pages';
+  const isDefaultFeed = !isPages && !category && !q && !publishedMin && !publishedMax && startIndex === '1';
+
+  let ttlMs = TTL_MAGAZINE_ARCHIVE_MS;
+  if (isPages) {
+    ttlMs = TTL_MAGAZINE_PAGES_MS;
+  } else if (isDefaultFeed) {
+    ttlMs = TTL_MAGAZINE_FEED_MS;
+  }
+
+  const cacheKey = `feed:${isPages ? 'pages' : 'posts'}:${category || ''}:${q || ''}:${startIndex}:${maxResults}:${publishedMin || ''}:${publishedMax || ''}`;
+  const cached = cacheStore.get(cacheKey);
+
+  // Return fresh cache immediately
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
+  try {
+    let targetUrl = isPages
       ? `https://magazine.5lb.eu/feeds/pages/default?alt=json&max-results=${maxResults}`
       : `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
 
-    if (category && feedType !== 'pages') {
+    if (category && !isPages) {
       targetUrl = `https://magazine.5lb.eu/feeds/posts/default/-/${encodeURIComponent(category)}?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
     }
     if (q) {
@@ -38,22 +291,28 @@ app.get('/api/feed', async (req, res) => {
       targetUrl += `&published-max=${encodeURIComponent(publishedMax)}`;
     }
 
-    const ifModifiedSince = req.headers['if-modified-since'];
     const fetchHeaders: Record<string, string> = {
       'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
       Accept: 'application/json',
     };
-    if (ifModifiedSince) {
-      fetchHeaders['If-Modified-Since'] = ifModifiedSince;
+    if (cached?.lastModified) {
+      fetchHeaders['If-Modified-Since'] = cached.lastModified;
+    }
+    if (cached?.etag) {
+      fetchHeaders['If-None-Match'] = cached.etag;
     }
 
     const response = await fetch(targetUrl, { headers: fetchHeaders });
 
-    if (response.status === 304) {
-      return res.status(304).end();
+    if (response.status === 304 && cached) {
+      cacheStore.renew(cacheKey, ttlMs);
+      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
     }
 
     if (!response.ok) {
+      if (cached) {
+        return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+      }
       return res.status(response.status).json({
         error: `Blogger feed returned ${response.status}: ${response.statusText}`,
       });
@@ -72,37 +331,133 @@ app.get('/api/feed', async (req, res) => {
       });
     }
 
-    // Cache for 300 seconds (5 min) on client, 900 seconds (15 min) on CDN to prevent excessive Blogger requests
-    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=900');
-    return res.json(data);
+    const newestPostDate =
+      data.feed?.entry?.[0]?.updated?.$t ||
+      data.feed?.entry?.[0]?.published?.$t ||
+      data.feed?.updated?.$t;
+    const lastModified = newestPostDate ? new Date(newestPostDate).toUTCString() : new Date().toUTCString();
+    const jsonBody = JSON.stringify(data);
+    const etag = computeETag(jsonBody);
+
+    const newEntry = cacheStore.set(cacheKey, {
+      body: jsonBody,
+      contentType: 'application/json; charset=utf-8',
+      etag,
+      lastModified,
+      ttlMs,
+    });
+
+    return sendCachedResponse(req, res, newEntry, 'MISS');
   } catch (error: any) {
     console.error('Error fetching Blogger feed:', error);
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
     return res.status(500).json({ error: error.message || 'Internal feed error' });
   }
 });
 
-// Endpoint to fetch any single article or page by URL with multiple reliable strategies
-app.get('/api/post-by-url', async (req, res) => {
+// 2. Endpoint to fetch a single article by Blogger postId
+app.get('/api/post', async (req, res) => {
+  const postId = (req.query.id as string | undefined)?.trim();
+  if (!postId) {
+    return res.status(400).json({ error: 'Missing id parameter' });
+  }
+
+  const cacheKey = `post-id:${postId}`;
+  const cached = cacheStore.get(cacheKey);
+
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
   try {
-    const rawUrl = req.query.url as string | undefined;
-    if (!rawUrl) {
-      return res.status(400).json({ error: 'Missing url parameter' });
+    const targetUrl = `https://magazine.5lb.eu/feeds/posts/default/${encodeURIComponent(postId)}?alt=json`;
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+      Accept: 'application/json',
+    };
+    if (cached?.lastModified) {
+      fetchHeaders['If-Modified-Since'] = cached.lastModified;
+    }
+    if (cached?.etag) {
+      fetchHeaders['If-None-Match'] = cached.etag;
     }
 
-    const trimmed = rawUrl.trim();
-    let parsed: URL;
-    try {
-      parsed = new URL(trimmed, 'https://magazine.5lb.eu');
-    } catch {
-      return res.status(400).json({ error: 'Invalid URL format' });
+    const response = await fetch(targetUrl, { headers: fetchHeaders });
+
+    if (response.status === 304 && cached) {
+      cacheStore.renew(cacheKey, TTL_MAGAZINE_ARTICLE_MS);
+      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
     }
 
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-    if (host !== 'magazine.5lb.eu') {
-      return res.status(400).json({ error: 'URL must belong to magazine.5lb.eu' });
+    if (!response.ok) {
+      if (cached) {
+        return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+      }
+      return res.status(response.status).json({
+        error: `Blogger post returned ${response.status}: ${response.statusText}`,
+      });
     }
 
-    const targetNorm = parsed.pathname.replace(/\/+$/, '').toLowerCase();
+    const data = await response.json();
+    const entry = data.entry;
+    if (!entry) {
+      return res.status(404).json({ error: 'Post entry not found' });
+    }
+
+    const pubDate = entry.updated?.$t || entry.published?.$t;
+    const lastModified = pubDate ? new Date(pubDate).toUTCString() : new Date().toUTCString();
+    const jsonBody = JSON.stringify({ entry });
+    const etag = computeETag(jsonBody);
+
+    const newEntry = cacheStore.set(cacheKey, {
+      body: jsonBody,
+      contentType: 'application/json; charset=utf-8',
+      etag,
+      lastModified,
+      ttlMs: TTL_MAGAZINE_ARTICLE_MS,
+    });
+
+    return sendCachedResponse(req, res, newEntry, 'MISS');
+  } catch (error: any) {
+    console.error('Error fetching post by ID:', error);
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
+    return res.status(500).json({ error: error.message || 'Internal post error' });
+  }
+});
+
+// 3. Endpoint to fetch any single article or page by URL with multiple reliable strategies
+app.get('/api/post-by-url', async (req, res) => {
+  const rawUrl = req.query.url as string | undefined;
+  if (!rawUrl) {
+    return res.status(400).json({ error: 'Missing url parameter' });
+  }
+
+  const trimmed = rawUrl.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed, 'https://magazine.5lb.eu');
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+  if (host !== 'magazine.5lb.eu') {
+    return res.status(400).json({ error: 'URL must belong to magazine.5lb.eu' });
+  }
+
+  const targetNorm = parsed.pathname.replace(/\/+$/, '').toLowerCase();
+  const cacheKey = `post-by-url:${targetNorm}`;
+  const cached = cacheStore.get(cacheKey);
+
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
+  try {
     const isPage = targetNorm.startsWith('/p/');
 
     // 1. Monographic pages (/p/...)
@@ -131,8 +486,18 @@ app.get('/api/post-by-url', async (req, res) => {
           }
         });
         if (matched) {
-          res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
-          return res.json({ entry: matched });
+          const pubDate = matched.updated?.$t || matched.published?.$t;
+          const lastModified = pubDate ? new Date(pubDate).toUTCString() : new Date().toUTCString();
+          const jsonBody = JSON.stringify({ entry: matched });
+          const etag = computeETag(jsonBody);
+          const newEntry = cacheStore.set(cacheKey, {
+            body: jsonBody,
+            contentType: 'application/json; charset=utf-8',
+            etag,
+            lastModified,
+            ttlMs: TTL_MAGAZINE_PAGES_MS,
+          });
+          return sendCachedResponse(req, res, newEntry, 'MISS');
         }
       }
     }
@@ -177,8 +542,18 @@ app.get('/api/post-by-url', async (req, res) => {
           if (entryRes.ok) {
             const entryData = await entryRes.json();
             if (entryData?.entry) {
-              res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
-              return res.json({ entry: entryData.entry });
+              const pubDate = entryData.entry.updated?.$t || entryData.entry.published?.$t;
+              const lastModified = pubDate ? new Date(pubDate).toUTCString() : new Date().toUTCString();
+              const jsonBody = JSON.stringify({ entry: entryData.entry });
+              const etag = computeETag(jsonBody);
+              const newEntry = cacheStore.set(cacheKey, {
+                body: jsonBody,
+                contentType: 'application/json; charset=utf-8',
+                etag,
+                lastModified,
+                ttlMs: TTL_MAGAZINE_ARTICLE_MS,
+              });
+              return sendCachedResponse(req, res, newEntry, 'MISS');
             }
           }
         } catch (e) {
@@ -227,8 +602,18 @@ app.get('/api/post-by-url', async (req, res) => {
             }
           });
           if (matched) {
-            res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
-            return res.json({ entry: matched });
+            const pubDate = matched.updated?.$t || matched.published?.$t;
+            const lastModified = pubDate ? new Date(pubDate).toUTCString() : new Date().toUTCString();
+            const jsonBody = JSON.stringify({ entry: matched });
+            const etag = computeETag(jsonBody);
+            const newEntry = cacheStore.set(cacheKey, {
+              body: jsonBody,
+              contentType: 'application/json; charset=utf-8',
+              etag,
+              lastModified,
+              ttlMs: TTL_MAGAZINE_ARTICLE_MS,
+            });
+            return sendCachedResponse(req, res, newEntry, 'MISS');
           }
         }
       } catch (e) {
@@ -276,38 +661,64 @@ app.get('/api/post-by-url', async (req, res) => {
           author: [{ name: { $t: '5LB Magazine' } }],
           category: [],
         };
-        res.setHeader('Cache-Control', 'public, max-age=600, s-maxage=3600');
-        return res.json({ entry: syntheticEntry });
+        const lastModified = new Date(published).toUTCString();
+        const jsonBody = JSON.stringify({ entry: syntheticEntry });
+        const etag = computeETag(jsonBody);
+        const newEntry = cacheStore.set(cacheKey, {
+          body: jsonBody,
+          contentType: 'application/json; charset=utf-8',
+          etag,
+          lastModified,
+          ttlMs: TTL_MAGAZINE_ARTICLE_MS,
+        });
+        return sendCachedResponse(req, res, newEntry, 'MISS');
       }
+    }
+
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
     }
 
     return res.status(404).json({ error: 'Articolo non trovato su magazine.5lb.eu' });
   } catch (error: any) {
     console.error('Error in /api/post-by-url:', error);
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
     return res.status(500).json({ error: error.message || 'Internal feed error' });
   }
 });
 
-// Check for updates endpoint (used by Periodic Sync & background polling with conditional If-Modified-Since)
+// 4. Check for updates endpoint (used by Periodic Sync & background polling with conditional If-Modified-Since)
 app.get('/api/check-updates', async (req, res) => {
+  const cacheKey = 'check-updates';
+  const cached = cacheStore.get(cacheKey);
+
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
   try {
-    const ifModifiedSince = req.headers['if-modified-since'];
     const fetchHeaders: Record<string, string> = {
       'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
       Accept: 'application/json',
     };
-    if (ifModifiedSince) {
-      fetchHeaders['If-Modified-Since'] = ifModifiedSince;
+    if (cached?.lastModified) {
+      fetchHeaders['If-Modified-Since'] = cached.lastModified;
     }
 
     const targetUrl = 'https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=5';
     const response = await fetch(targetUrl, { headers: fetchHeaders });
 
-    if (response.status === 304) {
-      return res.status(304).end();
+    if (response.status === 304 && cached) {
+      cacheStore.renew(cacheKey, TTL_MAGAZINE_UPDATES_MS);
+      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
     }
 
     if (!response.ok) {
+      if (cached) {
+        return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+      }
       return res.status(response.status).json({ error: 'Failed to fetch latest post' });
     }
 
@@ -322,17 +733,17 @@ app.get('/api/check-updates', async (req, res) => {
 
     const entry = entries[0];
     if (!entry) {
-      return res.json({ hasNew: false });
+      const emptyPayload = JSON.stringify({ hasNew: false });
+      const newEntry = cacheStore.set(cacheKey, {
+        body: emptyPayload,
+        contentType: 'application/json; charset=utf-8',
+        etag: computeETag(emptyPayload),
+        ttlMs: TTL_MAGAZINE_UPDATES_MS,
+      });
+      return sendCachedResponse(req, res, newEntry, 'MISS');
     }
 
     const postDate = new Date(entry.updated?.$t || entry.published?.$t).getTime();
-    if (ifModifiedSince) {
-      const sinceTime = new Date(ifModifiedSince).getTime();
-      if (!isNaN(sinceTime) && postDate <= sinceTime) {
-        return res.status(304).end();
-      }
-    }
-
     let link = 'https://magazine.5lb.eu';
     if (Array.isArray(entry.link)) {
       const altLink = entry.link.find((l: any) => l.rel === 'alternate' && l.type === 'text/html');
@@ -343,10 +754,7 @@ app.get('/api/check-updates', async (req, res) => {
     const summary = rawContent.replace(/<[^>]+>/g, ' ').slice(0, 150).trim();
     const lastModified = new Date(postDate).toUTCString();
 
-    res.setHeader('Last-Modified', lastModified);
-    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=900');
-
-    return res.json({
+    const resultPayload = JSON.stringify({
       hasNew: true,
       id: entry.id?.$t,
       title: entry.title?.$t,
@@ -355,13 +763,35 @@ app.get('/api/check-updates', async (req, res) => {
       published: entry.published?.$t,
       updated: entry.updated?.$t,
     });
+    const etag = computeETag(resultPayload);
+
+    const newEntry = cacheStore.set(cacheKey, {
+      body: resultPayload,
+      contentType: 'application/json; charset=utf-8',
+      etag,
+      lastModified,
+      ttlMs: TTL_MAGAZINE_UPDATES_MS,
+    });
+
+    return sendCachedResponse(req, res, newEntry, 'MISS');
   } catch (error: any) {
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
     return res.status(500).json({ error: error.message });
   }
 });
 
-// Telegram in-app view proxy endpoint to bypass X-Frame-Options: SAMEORIGIN
+// 5. Telegram in-app view proxy endpoint to bypass X-Frame-Options: SAMEORIGIN
 app.get('/api/telegram-view', async (req, res) => {
+  const cacheKey = 'telegram-view';
+  const cached = cacheStore.get(cacheKey);
+
+  if (cached && cached.isFresh) {
+    res.removeHeader('X-Frame-Options');
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
   try {
     const response = await fetch('https://t.me/s/magazine5LB', {
       headers: {
@@ -372,49 +802,81 @@ app.get('/api/telegram-view', async (req, res) => {
     });
 
     if (!response.ok) {
+      if (cached) {
+        res.removeHeader('X-Frame-Options');
+        return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+      }
       return res.status(response.status).send('Errore nel caricamento del canale Telegram.');
     }
 
     let html = await response.text();
 
-    // Inject <base href="https://t.me/"> and ensure external links open in new tab
+    // Inject <base href="https://t.me/"> and dark mode styles
     html = html.replace(
       '<head>',
       '<head><base href="https://t.me/"><style>body{background-color:#f8fafc;}@media(prefers-color-scheme:dark){body{background-color:#020617;}}</style>'
     );
 
-    // Remove frame headers so iframe renders perfectly inside app
+    const etag = computeETag(html);
+    const lastModified = response.headers.get('last-modified') || new Date().toUTCString();
+
+    const newEntry = cacheStore.set(cacheKey, {
+      body: html,
+      contentType: 'text/html; charset=utf-8',
+      etag,
+      lastModified,
+      ttlMs: TTL_TELEGRAM_MS,
+    });
+
     res.removeHeader('X-Frame-Options');
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=120, s-maxage=300');
-    return res.send(html);
+    return sendCachedResponse(req, res, newEntry, 'MISS');
   } catch (error: any) {
     console.error('Error proxying Telegram:', error);
+    if (cached) {
+      res.removeHeader('X-Frame-Options');
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
     return res.status(500).send('Impossibile caricare il canale Telegram al momento.');
   }
 });
 
-// Accade Oggi RSS (Atom) proxy endpoint with automatic fallback
+// 6. Accade Oggi RSS (Atom) proxy endpoint with automatic fallback and caching
 const ACCADE_OGGI_PRIMARY =
   'https://rss-bridge.org/bridge01/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
 const ACCADE_OGGI_FALLBACK =
   'https://rss-bridge.ggc-project.de/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
 
 app.get('/api/accade-oggi-feed', async (req, res) => {
+  const cacheKey = 'accade-oggi-feed';
+  const cached = cacheStore.get(cacheKey);
+  const ttlMs = getAccadeOggiTTL();
+
+  // Fresh cache hit: responds immediately
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
   const fetchWithTimeout = async (url: string) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
+      const headers: Record<string, string> = {
+        'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+        Accept: 'application/atom+xml, application/xml, text/xml, */*',
+      };
+      if (cached?.lastModified) {
+        headers['If-Modified-Since'] = cached.lastModified;
+      }
+      if (cached?.etag) {
+        headers['If-None-Match'] = cached.etag;
+      }
+
       const resp = await fetch(url, {
         signal: controller.signal,
-        headers: {
-          'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
-          Accept: 'application/atom+xml, application/xml, text/xml, */*',
-        },
+        headers,
       });
       clearTimeout(timer);
-      if (!resp.ok) throw new Error(`HTTP error ${resp.status}`);
-      return await resp.text();
+      return resp;
     } catch (err) {
       clearTimeout(timer);
       throw err;
@@ -422,26 +884,58 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
   };
 
   try {
-    let xmlContent = '';
+    let resp: Response | null = null;
     try {
-      xmlContent = await fetchWithTimeout(ACCADE_OGGI_PRIMARY);
+      resp = await fetchWithTimeout(ACCADE_OGGI_PRIMARY);
     } catch (errPrimary) {
       console.warn('Primary rss-bridge failed, trying fallback rss-bridge:', errPrimary);
-      xmlContent = await fetchWithTimeout(ACCADE_OGGI_FALLBACK);
+      try {
+        resp = await fetchWithTimeout(ACCADE_OGGI_FALLBACK);
+      } catch (errFallback) {
+        console.warn('Fallback rss-bridge failed:', errFallback);
+      }
     }
 
-    res.setHeader('Content-Type', 'application/atom+xml; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=900');
-    return res.send(xmlContent);
+    if (resp && resp.status === 304 && cached) {
+      cacheStore.renew(cacheKey, ttlMs);
+      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
+    }
+
+    if (resp && resp.ok) {
+      const xmlContent = await resp.text();
+      const lastModified = resp.headers.get('last-modified') || new Date().toUTCString();
+      const etag = computeETag(xmlContent);
+
+      const newEntry = cacheStore.set(cacheKey, {
+        body: xmlContent,
+        contentType: 'application/atom+xml; charset=utf-8',
+        etag,
+        lastModified,
+        ttlMs,
+      });
+
+      return sendCachedResponse(req, res, newEntry, 'MISS');
+    }
+
+    // Upstream failed or returned error: if we have any cached data (even expired), serve it to avoid app disruption!
+    if (cached) {
+      console.warn('Upstream rss-bridge unavailable, serving stale cached Accade Oggi feed');
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
+
+    return res.status(502).json({ error: 'Unable to retrieve Accade Oggi feed from rss-bridge' });
   } catch (error: any) {
     console.error('Error fetching Accade Oggi Atom feed:', error);
+    if (cached) {
+      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    }
     return res.status(502).json({ error: error.message || 'Unable to retrieve Accade Oggi feed' });
   }
 });
 
-
-
-
+// ============================================================================
+// SERVER INITIALIZATION
+// ============================================================================
 async function startServer() {
   if (!isProduction) {
     // Development mode: Vite dev server middleware

@@ -54,10 +54,11 @@ function setMetaValue(key, val) {
 // Background update checker using conditional HTTP requests (If-Modified-Since)
 async function checkFeedUpdatesInBackground() {
   try {
-    const [lastSeenId, lastSeenDate, lastModifiedHeader] = await Promise.all([
+    const [lastSeenId, lastSeenDate, lastModifiedHeader, etagHeader] = await Promise.all([
       getMetaValue('lastSeenPostId'),
       getMetaValue('lastSeenDate'),
       getMetaValue('lastModifiedHeader'),
+      getMetaValue('etagHeader'),
     ]);
 
     const headers = {
@@ -65,27 +66,24 @@ async function checkFeedUpdatesInBackground() {
       'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
     };
 
+    if (etagHeader) {
+      headers['If-None-Match'] = etagHeader;
+    }
     if (lastModifiedHeader) {
       headers['If-Modified-Since'] = lastModifiedHeader;
     }
 
-    // Attempt checking via backend proxy endpoint first, fallback to Blogger feed directly
+    // Check exclusively via backend proxy endpoint /api/check-updates
     let res = null;
     try {
       res = await fetch('/api/check-updates', { headers });
     } catch (e) {
-      // Proxy unavailable, try direct Blogger feed
-      const bloggerUrl = 'https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=3';
-      try {
-        res = await fetch(bloggerUrl, { headers });
-      } catch (errDirect) {
-        return;
-      }
+      return;
     }
 
     if (!res) return;
 
-    // HTTP 304: Not Modified -> Zero bytes, feed hasn't changed!
+    // HTTP 304: Not Modified -> Feed is already up-to-date
     if (res.status === 304) {
       return;
     }
@@ -94,6 +92,7 @@ async function checkFeedUpdatesInBackground() {
 
     const data = await res.json();
     const newLastModified = res.headers.get('Last-Modified') || res.headers.get('Date') || new Date().toUTCString();
+    const newEtag = res.headers.get('ETag');
 
     let postInfo = null;
 
@@ -134,6 +133,7 @@ async function checkFeedUpdatesInBackground() {
         setMetaValue('lastSeenPostId', postInfo.id),
         setMetaValue('lastSeenDate', postInfo.published),
         setMetaValue('lastModifiedHeader', newLastModified),
+        newEtag ? setMetaValue('etagHeader', newEtag) : Promise.resolve(),
       ]);
 
       // Trigger native notification
@@ -197,5 +197,6 @@ self.addEventListener('message', (event) => {
     if (event.data.postId) setMetaValue('lastSeenPostId', event.data.postId);
     if (event.data.published) setMetaValue('lastSeenDate', event.data.published);
     if (event.data.lastModified) setMetaValue('lastModifiedHeader', event.data.lastModified);
+    if (event.data.etag) setMetaValue('etagHeader', event.data.etag);
   }
 });
