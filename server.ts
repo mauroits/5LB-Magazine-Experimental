@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
@@ -961,9 +961,7 @@ async function startServer() {
 
 export { app };
 
-if (!process.env.FUNCTION_TARGET && !process.env.K_SERVICE && !process.env.FIREBASE_CONFIG) {
-  startServer().catch((err) => {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  });
-}
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
