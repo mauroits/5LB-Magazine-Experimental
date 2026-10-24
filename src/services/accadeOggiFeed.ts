@@ -2,53 +2,69 @@ import { BloggerPost } from '../types';
 import { FEED_SYNC_CONFIG } from '../config/syncConfig';
 import { getReadPostIds, getFavoritePostIds } from './bloggerFeed';
 
+export const ACCADE_OGGI_PRIMARY_URL =
+  'https://rss-bridge.org/bridge01/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
+export const ACCADE_OGGI_FALLBACK_URL =
+  'https://rss-bridge.ggc-project.de/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
+
+import {
+  getFeedMeta,
+  setFeedMeta,
+  getFeedDownloadedAt,
+  saveArticlesToDB,
+} from '../utils/idbStorage';
+
 export const ACCADE_OGGI_MAX_POSTS = 15;
-const ACCADE_OGGI_CACHE_KEY = '5lb_accade_oggi_posts_v1';
-const ACCADE_OGGI_TIMESTAMP_KEY = '5lb_accade_oggi_timestamp_v1';
-const ACCADE_OGGI_ETAG_KEY = '5lb_accade_oggi_etag_v1';
-const ACCADE_OGGI_LAST_MOD_KEY = '5lb_accade_oggi_last_mod_v1';
+const ACCADE_OGGI_FEED_KEY = 'accade_oggi';
+
+let inMemoryAccadeOggiPosts: BloggerPost[] = [];
+let inMemoryAccadeOggiTimestamp = 0;
+
+/**
+ * Inizializza i post di Accade Oggi caricandoli da IndexedDB.
+ */
+export async function initAccadeOggiStorage(allSavedPosts?: BloggerPost[]): Promise<BloggerPost[]> {
+  try {
+    const meta = await getFeedMeta(ACCADE_OGGI_FEED_KEY);
+    inMemoryAccadeOggiTimestamp = meta?.downloadedAt || 0;
+
+    if (meta && Array.isArray(meta.postIds) && meta.postIds.length > 0) {
+      const idSet = new Set(meta.postIds);
+      if (allSavedPosts && allSavedPosts.length > 0) {
+        inMemoryAccadeOggiPosts = allSavedPosts
+          .filter((p) => idSet.has(p.id) || p.isAccadeOggi)
+          .slice(0, ACCADE_OGGI_MAX_POSTS);
+      }
+    }
+  } catch {
+    // In-memory fallback
+  }
+  return inMemoryAccadeOggiPosts;
+}
 
 export function getAccadeOggiCacheTimestamp(): number {
-  try {
-    const raw = localStorage.getItem(ACCADE_OGGI_TIMESTAMP_KEY);
-    if (raw) return parseInt(raw, 10) || 0;
-  } catch (e) {
-    // ignore
-  }
-  return 0;
+  return inMemoryAccadeOggiTimestamp;
 }
 
 export function saveAccadeOggiCacheTimestamp(ts: number = Date.now()): void {
-  try {
-    localStorage.setItem(ACCADE_OGGI_TIMESTAMP_KEY, ts.toString());
-  } catch (e) {
-    // ignore
-  }
+  inMemoryAccadeOggiTimestamp = ts;
 }
 
 export function getCachedAccadeOggiPosts(): BloggerPost[] {
-  try {
-    const raw = localStorage.getItem(ACCADE_OGGI_CACHE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.slice(0, ACCADE_OGGI_MAX_POSTS);
-      }
-    }
-  } catch (e) {
-    console.warn('Errore lettura cache Accade Oggi:', e);
-  }
-  return [];
+  return inMemoryAccadeOggiPosts;
 }
 
 export function saveCachedAccadeOggiPosts(posts: BloggerPost[]): void {
-  try {
-    const limited = posts.slice(0, ACCADE_OGGI_MAX_POSTS);
-    localStorage.setItem(ACCADE_OGGI_CACHE_KEY, JSON.stringify(limited));
-    saveAccadeOggiCacheTimestamp(Date.now());
-  } catch (e) {
-    console.warn('Errore salvataggio cache Accade Oggi:', e);
-  }
+  const limited = posts.slice(0, ACCADE_OGGI_MAX_POSTS);
+  inMemoryAccadeOggiPosts = limited;
+  inMemoryAccadeOggiTimestamp = Date.now();
+
+  // Salva sia gli articoli completi sia i metadati del feed (con downloadedAt) in IndexedDB
+  saveArticlesToDB(limited).catch(() => {});
+  setFeedMeta(ACCADE_OGGI_FEED_KEY, {
+    downloadedAt: inMemoryAccadeOggiTimestamp,
+    postIds: limited.map((p) => p.id),
+  }).catch(() => {});
 }
 
 function cleanHtmlEntities(str: string): string {
@@ -176,20 +192,22 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
     }
   }
 
-  // Strictly cap at max 15 posts as required
+  // Strictly cap at max 15 posts as requested
   return posts.slice(0, ACCADE_OGGI_MAX_POSTS);
 }
 
 /**
- * Fetches the Accade Oggi RSS feed exclusively through our /api/accade-oggi-feed proxy.
- * Sends conditional headers (ETag, If-Modified-Since) to handle 304 Not Modified.
- * Never connects directly to rss-bridge or third-party providers.
+ * Fetches the Accade Oggi RSS feed using multi-tier fallback:
+ * 1. Local backend proxy endpoint /api/accade-oggi-feed (handles server-side fetch & fallback)
+ * 2. Direct fetch to primary rss-bridge.org
+ * 3. Direct fetch to fallback rss-bridge.ggc-project.de
+ * 4. Public CORS proxy fallback for static environments
  */
 export async function fetchAccadeOggiPosts(options?: {
   forceRefresh?: boolean;
 }): Promise<BloggerPost[]> {
   const cached = getCachedAccadeOggiPosts();
-  const lastFetch = getAccadeOggiCacheTimestamp();
+  const lastFetch = (await getFeedDownloadedAt(ACCADE_OGGI_FEED_KEY)) || getAccadeOggiCacheTimestamp();
   const isFresh = lastFetch > 0 && Date.now() - lastFetch < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
 
   // If not forcing refresh and cache is fresh, return cache immediately
@@ -202,37 +220,10 @@ export async function fetchAccadeOggiPosts(options?: {
     return cached;
   }
 
-  // Call the proxy endpoint exclusively with conditional headers
+  // Tier 1: Local /api/accade-oggi-feed Express proxy
   try {
-    const headers: Record<string, string> = {
-      Accept: 'application/atom+xml, application/xml, text/xml, */*',
-    };
-
-    if (!options?.forceRefresh) {
-      const savedEtag = localStorage.getItem(ACCADE_OGGI_ETAG_KEY);
-      const savedLastMod = localStorage.getItem(ACCADE_OGGI_LAST_MOD_KEY);
-      if (savedEtag) {
-        headers['If-None-Match'] = savedEtag;
-      }
-      if (savedLastMod) {
-        headers['If-Modified-Since'] = savedLastMod;
-      }
-    }
-
-    const res = await fetch('/api/accade-oggi-feed', { headers });
-
-    // 304 Not Modified: content has not changed, refresh cache timestamp and return local cache
-    if (res.status === 304 && cached.length > 0) {
-      saveAccadeOggiCacheTimestamp(Date.now());
-      return cached;
-    }
-
+    const res = await fetch('/api/accade-oggi-feed');
     if (res.ok) {
-      const newEtag = res.headers.get('ETag');
-      const newLastMod = res.headers.get('Last-Modified');
-      if (newEtag) localStorage.setItem(ACCADE_OGGI_ETAG_KEY, newEtag);
-      if (newLastMod) localStorage.setItem(ACCADE_OGGI_LAST_MOD_KEY, newLastMod);
-
       const xml = await res.text();
       const parsed = parseAtomXmlToPosts(xml);
       if (parsed.length > 0) {
@@ -241,10 +232,58 @@ export async function fetchAccadeOggiPosts(options?: {
       }
     }
   } catch (e) {
-    console.warn('Proxy /api/accade-oggi-feed non raggiungibile:', e);
+    // Proxy unavailable (e.g. pure static deployment)
   }
 
-  // Fallback to local cache if proxy call failed
+  // Tier 2: Direct fetch to primary rss-bridge.org
+  try {
+    const res = await fetch(ACCADE_OGGI_PRIMARY_URL);
+    if (res.ok) {
+      const xml = await res.text();
+      const parsed = parseAtomXmlToPosts(xml);
+      if (parsed.length > 0) {
+        saveCachedAccadeOggiPosts(parsed);
+        return parsed;
+      }
+    }
+  } catch (e) {
+    // Primary failed or CORS blocked
+  }
+
+  // Tier 3: Direct fetch to fallback rss-bridge.ggc-project.de
+  try {
+    const res = await fetch(ACCADE_OGGI_FALLBACK_URL);
+    if (res.ok) {
+      const xml = await res.text();
+      const parsed = parseAtomXmlToPosts(xml);
+      if (parsed.length > 0) {
+        saveCachedAccadeOggiPosts(parsed);
+        return parsed;
+      }
+    }
+  } catch (e) {
+    // Fallback failed or CORS blocked
+  }
+
+  // Tier 4: Public CORS proxies
+  for (const feedUrl of [ACCADE_OGGI_PRIMARY_URL, ACCADE_OGGI_FALLBACK_URL]) {
+    try {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+      const res = await fetch(proxyUrl);
+      if (res.ok) {
+        const xml = await res.text();
+        const parsed = parseAtomXmlToPosts(xml);
+        if (parsed.length > 0) {
+          saveCachedAccadeOggiPosts(parsed);
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // try next
+    }
+  }
+
+  // If network failed but cache exists, return cache
   if (cached.length > 0) {
     return cached;
   }

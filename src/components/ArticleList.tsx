@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
+import { toHttpsUrl } from '../utils/safeUrl';
 import { AI_BANNER_CONFIG } from '../config/infoContent';
 import { ArchiveBadgeButton } from './BadgeIcon';
 import { getCurrentBadge } from '../services/badgeService';
@@ -484,21 +485,25 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   : 'border-orange-200/80 dark:border-orange-950/60 shadow-sm ring-1 ring-orange-500/10'
               }`}
             >
-              {/* Thumbnail image if available */}
-              {post.thumbnail && (
-                <div className="relative aspect-video w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-                  <img
-                    src={post.thumbnail}
-                    alt={post.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              )}
+              {/* Thumbnail image if available and valid https */}
+              {(() => {
+                const safeThumb = toHttpsUrl(post.thumbnail);
+                if (!safeThumb) return null;
+                return (
+                  <div className="relative aspect-video w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+                    <img
+                      src={safeThumb}
+                      alt={post.title}
+                      loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                );
+              })()}
 
               {/* Card Body */}
               <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">

@@ -28,6 +28,8 @@ import {
 import { BloggerPost } from '../types';
 import { formatItalianDate, isMagazineUrl } from '../services/bloggerFeed';
 import { highlightHtmlContent } from '../utils/searchUtils';
+import { sanitizeArticleHtml } from '../utils/sanitizeHtml';
+import { toHttpsUrl } from '../utils/safeUrl';
 import { trackEvent } from '../services/analytics';
 import { openExternalBrowser } from '../utils/browserLauncher';
 
@@ -343,14 +345,24 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     };
   }, [post?.id, stopSpeech]);
 
+  // Sanitize raw HTML content (from Blogger and Telegram feed) with DOMPurify
+  const safeHtmlContent = useMemo(() => {
+    if (!post?.content) return '';
+    return sanitizeArticleHtml(post.content);
+  }, [post?.content]);
+
   // Highlighted HTML content & match count computation
   const { highlightedHtml, totalMatches } = useMemo(() => {
-    if (!post?.content) return { highlightedHtml: '', totalMatches: 0 };
+    if (!safeHtmlContent) return { highlightedHtml: '', totalMatches: 0 };
     if (!isSearchOpen || !searchWord.trim()) {
-      return { highlightedHtml: post.content, totalMatches: 0 };
+      return { highlightedHtml: safeHtmlContent, totalMatches: 0 };
     }
-    return highlightHtmlContent(post.content, searchWord, activeIndex, isExactWord);
-  }, [post?.content, isSearchOpen, searchWord, activeIndex, isExactWord]);
+    const highlighted = highlightHtmlContent(safeHtmlContent, searchWord, activeIndex, isExactWord);
+    return {
+      highlightedHtml: sanitizeArticleHtml(highlighted.highlightedHtml),
+      totalMatches: highlighted.totalMatches,
+    };
+  }, [safeHtmlContent, isSearchOpen, searchWord, activeIndex, isExactWord]);
 
   // Jump to next match
   const handleNextMatch = useCallback(() => {
@@ -388,28 +400,35 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     }
   }, [activeIndex, isSearchOpen, totalMatches, searchWord]);
 
+  // Safe HTTPS URL for original post link
+  const safePostLink = useMemo(() => {
+    return toHttpsUrl(post?.link);
+  }, [post?.link]);
+
   if (!post) return null;
 
   const handleShare = async () => {
     const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+    const shareUrl = safePostLink || undefined;
+
     trackEvent('share', {
       method: canShare ? 'native_share' : 'clipboard',
       content_type: 'article',
       item_id: post.id,
-      url: post.link,
+      url: shareUrl,
     });
 
-    if (canShare) {
+    if (canShare && shareUrl) {
       try {
         await navigator.share({
-          url: post.link,
+          url: shareUrl,
         });
       } catch (e) {
         // user cancelled
       }
-    } else {
+    } else if (shareUrl) {
       try {
-        await navigator.clipboard.writeText(post.link);
+        await navigator.clipboard.writeText(shareUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch (e) {
@@ -512,19 +531,21 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
               {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Share2 className="w-4 h-4" />}
             </button>
 
-            <a
-              href={post.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => {
-                e.preventDefault();
-                openExternalBrowser(post.link);
-              }}
-              className="p-2 rounded-xl text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              title="Apri articolo originale su magazine.5lb.eu"
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
+            {safePostLink && (
+              <a
+                href={safePostLink ?? undefined}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openExternalBrowser(safePostLink);
+                }}
+                className="p-2 rounded-xl text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title="Apri articolo originale su magazine.5lb.eu"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
           </div>
         </div>
 
@@ -866,24 +887,26 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                   Consulta il post originale, i commenti e le reazioni su Telegram.
                 </p>
               </div>
-              <a
-                href={post.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.preventDefault();
-                  trackEvent('open_original_telegram_post', {
-                    link_url: post.link,
-                    article_title: post.title,
-                    article_id: post.id,
-                  });
-                  openExternalBrowser(post.link);
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#229ED9] hover:bg-[#1d8bc0] text-white font-medium text-xs transition shadow-xs cursor-pointer"
-              >
-                <span>Apri su Telegram</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {safePostLink && (
+                <a
+                  href={safePostLink ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    trackEvent('open_original_telegram_post', {
+                      link_url: safePostLink,
+                      article_title: post.title,
+                      article_id: post.id,
+                    });
+                    openExternalBrowser(safePostLink);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#229ED9] hover:bg-[#1d8bc0] text-white font-medium text-xs transition shadow-xs cursor-pointer"
+                >
+                  <span>Apri su Telegram</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
             </div>
           ) : (
             <div className="mt-10 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -895,28 +918,30 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                   Consulta commenti, immagini e contenuti multimediali su Blogger.
                 </p>
               </div>
-              <a
-                href={post.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => {
-                  e.preventDefault();
-                  trackEvent('open_original_blogger_post', {
-                    link_url: post.link,
-                    article_title: post.title,
-                    article_id: post.id,
-                  });
-                  if (onInterceptLink && isMagazineUrl(post.link)) {
-                    onInterceptLink(post.link);
-                  } else {
-                    openExternalBrowser(post.link);
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs transition shadow-xs cursor-pointer"
-              >
-                <span>Vai a magazine.5lb.eu</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+              {safePostLink && (
+                <a
+                  href={safePostLink ?? undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    trackEvent('open_original_blogger_post', {
+                      link_url: safePostLink,
+                      article_title: post.title,
+                      article_id: post.id,
+                    });
+                    if (onInterceptLink && isMagazineUrl(safePostLink)) {
+                      onInterceptLink(safePostLink);
+                    } else {
+                      openExternalBrowser(safePostLink);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-medium text-xs transition shadow-xs cursor-pointer"
+                >
+                  <span>Vai a magazine.5lb.eu</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
             </div>
           )}
         </div>

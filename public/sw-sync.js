@@ -7,15 +7,25 @@ const SYNC_TAG = '5lb-magazine-periodic-sync';
 const DB_NAME = '5lb_magazine_sync_db_v1';
 const STORE_NAME = 'sync_meta';
 
-// Helper to open IndexedDB inside Service Worker
+// Helper to open IndexedDB inside Service Worker (matches DB_VERSION = 2)
 function openSyncDB() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IDB unavailable'));
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains('articles')) {
+        const articleStore = db.createObjectStore('articles', { keyPath: 'id' });
+        articleStore.createIndex('published', 'published', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('feed_meta')) {
+        db.createObjectStore('feed_meta');
+      }
+      if (!db.objectStoreNames.contains('app_state')) {
+        db.createObjectStore('app_state');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -169,9 +179,23 @@ self.addEventListener('periodicsync', (event) => {
 // Handle clicking on native push/periodic notifications
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const fallbackUrl = self.registration?.scope || '/';
-  const urlToOpen = event.notification.data?.url || fallbackUrl;
+  const scopeUrl = self.registration?.scope || '/';
+  const rawUrlToOpen = event.notification.data?.url || scopeUrl;
   const postId = event.notification.data?.postId;
+
+  let urlToOpen = scopeUrl;
+  try {
+    const parsed = new URL(rawUrlToOpen, scopeUrl);
+    const scopeParsed = new URL(scopeUrl);
+    const isSameOrigin = parsed.origin === scopeParsed.origin;
+    const isMagazineHttps = parsed.protocol === 'https:' && parsed.hostname.toLowerCase().replace(/^www\./, '') === 'magazine.5lb.eu';
+
+    if (isSameOrigin || isMagazineHttps) {
+      urlToOpen = parsed.href;
+    }
+  } catch (e) {
+    urlToOpen = scopeUrl;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {

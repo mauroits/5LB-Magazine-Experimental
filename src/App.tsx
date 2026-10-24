@@ -47,8 +47,17 @@ import {
   isMagazineUrl,
   findPostByUrl,
   fetchPostByUrl,
-  saveOrUpdatePostInCache
+  saveOrUpdatePostInCache,
+  initBloggerStorage,
+  getCategoryFeedCache,
+  getCategoryDownloadedAt,
 } from './services/bloggerFeed';
+import {
+  cleanupOldLocalStorageKeys,
+  requestPersistentStorage,
+  saveArticlesToDB,
+} from './utils/idbStorage';
+import { initBadgesStorage } from './services/badgeService';
 import { FEED_SYNC_CONFIG } from './config/syncConfig';
 import {
   registerPeriodicSync,
@@ -65,7 +74,8 @@ import {
 import {
   fetchAccadeOggiPosts,
   getCachedAccadeOggiPosts,
-  getAccadeOggiCacheTimestamp
+  getAccadeOggiCacheTimestamp,
+  initAccadeOggiStorage,
 } from './services/accadeOggiFeed';
 import { NAV_SECTIONS, GOOGLE_NOTEBOOK_URL } from './config/navigation';
 import { openNotebookWithPriority } from './utils/notebookLauncher';
@@ -289,6 +299,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // 1. Pulizia vecchie chiavi localStorage e richiesta persistenza IndexedDB
+    cleanupOldLocalStorageKeys();
+    requestPersistentStorage().catch(() => {});
+
     initAnalyticsWithSavedConsent();
 
     // Traccia la visualizzazione iniziale di pagina
@@ -307,14 +321,38 @@ export default function App() {
     // Registra Periodic Background Sync del Service Worker (12 ore, configurabile in syncConfig.ts)
     registerPeriodicSync().catch(() => {});
 
-    // Sincronizza lo stato iniziale del post più recente con l'IndexedDB del Service Worker
-    if (posts.length > 0) {
-      syncNewestPostWithSW(posts).catch(() => {});
-    }
+    // Inizializza archivio badge da IndexedDB
+    initBadgesStorage().catch(() => {});
 
-    // 1) Controllo di aggiornamenti al boot della PWA per entrambi i feed
-    loadAccadeOggiFeed(false);
-    loadFeed(false);
+    // Inizializza feed Accade Oggi da IndexedDB (stale-while-revalidate: circa 6 ore)
+    initAccadeOggiStorage().then((aoPosts) => {
+      if (aoPosts.length > 0) {
+        setAccadeOggiPosts(aoPosts);
+        setIsAccadeOggiLoading(false);
+      }
+      const lastAo = getAccadeOggiCacheTimestamp();
+      const isAoFresh = lastAo > 0 && Date.now() - lastAo < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+      if (!isAoFresh || aoPosts.length === 0) {
+        loadAccadeOggiFeed(false);
+      }
+    }).catch(() => {
+      loadAccadeOggiFeed(false);
+    });
+
+    // Inizializza feed principale e articoli da IndexedDB (stale-while-revalidate: circa 6 ore)
+    initBloggerStorage().then(({ posts: cachedArticles, feedDownloadedAt }) => {
+      if (cachedArticles.length > 0) {
+        setPosts(cachedArticles);
+        setIsLoading(false);
+        syncNewestPostWithSW(cachedArticles).catch(() => {});
+      }
+      const isMainFresh = feedDownloadedAt > 0 && Date.now() - feedDownloadedAt < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+      if (!isMainFresh || cachedArticles.length === 0) {
+        loadFeed(false);
+      }
+    }).catch(() => {
+      loadFeed(false);
+    });
 
     // 2) Se l'app resta aperta: controlla periodicamente
     const interval = setInterval(() => {
@@ -337,22 +375,45 @@ export default function App() {
     };
   }, [loadFeed, loadAccadeOggiFeed]);
 
-  // On-demand category loading: populate category list only when selected for the first time
+  // On-demand category loading: populate category list only when selected (stale-while-revalidate da IndexedDB)
   useEffect(() => {
     let isCancelled = false;
 
     if (activeFilter.type === 'rss' && activeFilter.category) {
       const catKey = activeFilter.category.trim();
 
-      // Only fetch if not already populated
-      if (!categoryFeeds[catKey]) {
-        setIsCategoryLoading(true);
-        fetchBloggerPosts({
-          category: catKey,
-          startIndex: 1,
-          maxResults: 15,
-        })
-          .then((res) => {
+      const loadCategory = async () => {
+        // 1. Prova prima la cache da IndexedDB per risposta istantanea (0ms)
+        if (!categoryFeeds[catKey]) {
+          const cached = await getCategoryFeedCache(catKey);
+          if (cached && !isCancelled) {
+            setCategoryFeeds((prev) => ({
+              ...prev,
+              [catKey]: {
+                posts: cached.posts,
+                hasMore: cached.hasMore,
+                totalResults: cached.totalResults,
+              },
+            }));
+            const isFresh = Date.now() - cached.downloadedAt < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+            if (isFresh || !navigator.onLine) {
+              return; // Già fresco (<6 ore) o offline: niente richiesta di rete
+            }
+          }
+        }
+
+        // 2. Se non in cache o scaduto (> 6 ore): scarica dal network
+        const downloadedAt = await getCategoryDownloadedAt(catKey);
+        const needsUpdate = !categoryFeeds[catKey] || downloadedAt === 0 || Date.now() - downloadedAt >= FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+
+        if (needsUpdate) {
+          if (!categoryFeeds[catKey]) setIsCategoryLoading(true);
+          try {
+            const res = await fetchBloggerPosts({
+              category: catKey,
+              startIndex: 1,
+              maxResults: 15,
+            });
             if (!isCancelled) {
               setCategoryFeeds((prev) => ({
                 ...prev,
@@ -363,7 +424,7 @@ export default function App() {
                 },
               }));
 
-              // Merge into global posts for search index and badge counts
+              // Unisci con i post globali per ricerca locale e conteggi badge
               setPosts((prev) => {
                 const map = new Map<string, BloggerPost>();
                 for (const p of prev) map.set(p.id, p);
@@ -376,22 +437,19 @@ export default function App() {
                 }
                 const merged = Array.from(map.values());
                 merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
-                try {
-                  localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
-                } catch (e) {
-                  // ignore
-                }
+                saveArticlesToDB(merged).catch(() => {});
                 return merged;
               });
             }
-          })
-          .catch((e) => {
+          } catch (e) {
             console.warn('Errore nel caricamento del feed della categoria:', e);
-          })
-          .finally(() => {
+          } finally {
             if (!isCancelled) setIsCategoryLoading(false);
-          });
-      }
+          }
+        }
+      };
+
+      loadCategory();
     }
 
     return () => {
@@ -414,11 +472,7 @@ export default function App() {
           const existingIds = new Set(prev.map((p) => p.id));
           const newPosts = res.posts.filter((p) => !existingIds.has(p.id));
           const merged = [...prev, ...newPosts];
-          try {
-            localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
-          } catch (e) {
-            // ignore
-          }
+          saveArticlesToDB(merged).catch(() => {});
           return merged;
         });
         setMainFeedHasMore(res.hasMore);
@@ -462,11 +516,7 @@ export default function App() {
           const merged = Array.from(map.values()).sort(
             (a, b) => new Date(b.published).getTime() - new Date(a.published).getTime()
           );
-          try {
-            localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
-          } catch (e) {
-            // ignore
-          }
+          saveArticlesToDB(merged).catch(() => {});
           return merged;
         });
       } catch (err) {
@@ -900,13 +950,8 @@ export default function App() {
           const merged = Array.from(map.values());
           merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
 
-          // Persist merged cache to localStorage
-          try {
-            localStorage.setItem('5lb_magazine_posts_cache_v1', JSON.stringify(merged));
-          } catch (e) {
-            // ignore
-          }
-
+          // Persist merged cache to IndexedDB
+          saveArticlesToDB(merged).catch(() => {});
           return merged;
         });
 

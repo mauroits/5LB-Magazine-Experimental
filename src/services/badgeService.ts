@@ -88,33 +88,42 @@ export const BADGE_TIERS: BadgeTier[] = [
   },
 ];
 
-const UNLOCKED_BADGES_KEY = '5lb_magazine_unlocked_badges_v1';
+import { getAppStateItem, setAppStateItem } from '../utils/idbStorage';
+
+let inMemoryUnlockedBadgeIds = new Set<string>();
+let isBadgesInitialized = false;
 
 /**
- * Legge i badge già sbloccati memorizzati in localStorage.
+ * Inizializza i badge da IndexedDB (o fallback in-memory).
  */
-export function getStoredUnlockedBadgeIds(): string[] {
+export async function initBadgesStorage(): Promise<string[]> {
   try {
-    const raw = localStorage.getItem(UNLOCKED_BADGES_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+    const stored = await getAppStateItem<string[]>('unlocked_badges');
+    if (Array.isArray(stored)) {
+      inMemoryUnlockedBadgeIds = new Set(stored);
+    } else {
+      inMemoryUnlockedBadgeIds = new Set();
     }
-  } catch (e) {
-    console.error('Errore lettura badge sbloccati:', e);
+  } catch {
+    inMemoryUnlockedBadgeIds = new Set();
   }
-  return [];
+  isBadgesInitialized = true;
+  return Array.from(inMemoryUnlockedBadgeIds);
 }
 
 /**
- * Salva i badge sbloccati in localStorage.
+ * Legge i badge già sbloccati (da memoria cache rapida popolata da IndexedDB).
+ */
+export function getStoredUnlockedBadgeIds(): string[] {
+  return Array.from(inMemoryUnlockedBadgeIds);
+}
+
+/**
+ * Salva i badge sbloccati in IndexedDB.
  */
 export function saveUnlockedBadgeIds(ids: string[]): void {
-  try {
-    localStorage.setItem(UNLOCKED_BADGES_KEY, JSON.stringify(ids));
-  } catch (e) {
-    console.error('Errore salvataggio badge sbloccati:', e);
-  }
+  inMemoryUnlockedBadgeIds = new Set(ids);
+  setAppStateItem('unlocked_badges', ids).catch(() => {});
 }
 
 /**
@@ -171,7 +180,7 @@ export function getBadgeProgress(articleCount: number): {
 /**
  * Controlla se sono stati sbloccati nuovi badge in base al conteggio articoli in "Il mio archivio".
  * Se trova nuovi badge:
- * 1. Li persiste in localStorage
+ * 1. Li persiste in IndexedDB
  * 2. Invia la notifica (push + centro notifiche + suono)
  * 3. Notifica l'interfaccia via custom event
  * 4. Ritorna la lista dei nuovi badge sbloccati
