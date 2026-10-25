@@ -21,6 +21,7 @@ export const STORES = {
 export interface FeedMeta {
   key: string;
   downloadedAt: number;
+  lastCheckedAt?: number;
   postIds: string[];
   totalResults?: number;
   hasMore?: boolean;

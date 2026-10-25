@@ -17,7 +17,9 @@ import {
   Shuffle,
   ArrowDownCircle,
   Globe,
-  Search
+  Search,
+  WifiOff,
+  RotateCw,
 } from 'lucide-react';
 import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
@@ -33,6 +35,8 @@ interface ArticleListProps {
   isLoadingMore?: boolean;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  loadError?: boolean;
+  onRetry?: () => void;
   activeFilter: ActiveFilter;
   filterTitle: string;
   searchQuery?: string;
@@ -55,6 +59,8 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   isLoadingMore = false,
   hasMore = false,
   onLoadMore,
+  loadError = false,
+  onRetry,
   activeFilter,
   filterTitle,
   searchQuery = '',
@@ -406,8 +412,35 @@ export const ArticleList: React.FC<ArticleListProps> = ({
         </div>
       )}
 
-      {/* Empty State */}
+      {/* Empty / Error State */}
       {displayedPosts.length === 0 && !isLoading && (() => {
+        if (loadError) {
+          return (
+            <div className="text-center py-14 px-4 bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/40 shadow-xs">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-500 mx-auto flex items-center justify-center mb-3">
+                <WifiOff className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                Impossibile contattare la fonte dei dati
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+                Non è stato possibile caricare i contenuti della sezione. Verifica la connessione di rete e riprova.
+              </p>
+              {onRetry && (
+                <div className="mt-5 flex items-center justify-center">
+                  <button
+                    onClick={onRetry}
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <RotateCw className="w-3.5 h-3.5" />
+                    <span>Riprova</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
+
         const isSubcategory =
           activeFilter.type === 'rss' ||
           (activeFilter.type === 'quick' && activeFilter.id !== 'all');

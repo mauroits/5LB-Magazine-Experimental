@@ -286,7 +286,7 @@ function fetchBloggerJsonp(maxResults: number, startIndex: number = 1, category?
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error('Timeout durante il download dei feed da Blogger (JSONP)'));
-    }, 15000);
+    }, 10000);
 
     const cleanup = () => {
       clearTimeout(timer);
@@ -379,82 +379,25 @@ export async function fetchBloggerPosts(options?: {
 
   let jsonResult: any = null;
 
-  // Method 1: Try local backend proxy /api/feed (fast on full-stack dev/server)
+  // Chiamata di rete a Blogger via JSONP nativo (100% CORS-free, timeout a 10s)
   try {
-    let proxyUrl = category
-      ? `/api/feed?max-results=${maxResults}&start-index=${startIndex}&category=${encodeURIComponent(category)}`
-      : `/api/feed?max-results=${maxResults}&start-index=${startIndex}`;
-
-    if (q) {
-      proxyUrl += `&q=${encodeURIComponent(q)}`;
-    }
-
-    const fetchHeaders: Record<string, string> = { Accept: 'application/json' };
-    if (!category && !q && startIndex === 1 && inMemoryCachedPosts.length > 0 && inMemoryCachedPosts[0].published && !forceRefresh) {
-      fetchHeaders['If-Modified-Since'] = new Date(inMemoryCachedPosts[0].published).toUTCString();
-    }
-
-    const res = await fetch(proxyUrl, { headers: fetchHeaders });
-
-    // Handle 304 Not Modified -> Feed is completely up to date! Return cached posts immediately
-    if (res.status === 304 && inMemoryCachedPosts.length > 0) {
-      saveFeedCacheTimestamp(Date.now());
-      let filtered = applyFilter(inMemoryCachedPosts, category);
-      return {
-        posts: filtered.slice(startIndex - 1, startIndex - 1 + maxResults),
-        totalResults: filtered.length,
-        hasMore: startIndex + maxResults - 1 < filtered.length,
-      };
-    }
-
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      jsonResult = await res.json();
-    }
-  } catch {
-    // Proxy not available (static hosting like app.5lb.eu or GitHub Pages)
+    jsonResult = await fetchBloggerJsonp(maxResults, startIndex, category, q);
+  } catch (errJsonp) {
+    console.warn('Scaricamento feed Blogger via JSONP non riuscito o andato in timeout (10s):', errJsonp);
   }
 
-  // Method 2: If proxy not available or failed, use native Blogger JSONP (100% CORS-free client side)
+  // Se la rete è fallita o andata in timeout ma abbiamo cache (memoria o IndexedDB), fallback trasparente
   if (!jsonResult || !jsonResult.feed) {
-    try {
-      jsonResult = await fetchBloggerJsonp(maxResults, startIndex, category, q);
-    } catch (errJsonp) {
-      console.warn('Blogger JSONP fetch failed, trying direct fetch:', errJsonp);
-    }
-  }
-
-  // Method 3: Fallback to direct fetch
-  if (!jsonResult || !jsonResult.feed) {
-    try {
-      let directBloggerUrl = category
-        ? `https://magazine.5lb.eu/feeds/posts/default/-/${encodeURIComponent(category)}?alt=json&max-results=${maxResults}&start-index=${startIndex}`
-        : `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${maxResults}&start-index=${startIndex}`;
-
-      if (q) {
-        directBloggerUrl += `&q=${encodeURIComponent(q)}`;
-      }
-
-      const res = await fetch(directBloggerUrl);
-      if (res.ok) {
-        jsonResult = await res.json();
-      }
-    } catch (errDirect) {
-      console.warn('Direct Blogger fetch failed:', errDirect);
-    }
-  }
-
-  // If network failed but we have cache, fallback gracefully
-  if (!jsonResult || !jsonResult.feed) {
-    if (inMemoryCachedPosts.length > 0) {
-      let filtered = applyFilter(inMemoryCachedPosts, category);
+    const fallbackPool = inMemoryCachedPosts.length > 0 ? inMemoryCachedPosts : await getAllArticlesFromDB();
+    if (fallbackPool.length > 0) {
+      let filtered = applyFilter(fallbackPool, category);
       if (q) {
         filtered = filtered.filter((p) => postMatchesExactPhrase(p, q));
       }
       return {
         posts: filtered.slice(startIndex - 1, startIndex - 1 + maxResults),
         totalResults: filtered.length,
-        hasMore: startIndex + maxResults - 1 < filtered.length,
+        hasMore: startIndex + maxResults - 1 < fallbackPool.length,
       };
     }
     throw new Error('Impossibile scaricare i post del magazine. Verifica la connessione internet.');
@@ -663,7 +606,7 @@ function fetchBloggerScriptUrl(fullUrl: string): Promise<any> {
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error('Timeout durante la richiesta diretta a Blogger'));
-    }, 15000);
+    }, 10000);
 
     const cleanup = () => {
       clearTimeout(timer);

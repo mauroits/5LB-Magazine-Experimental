@@ -1,6 +1,5 @@
 import { BloggerPost } from '../types';
-import { FEED_SYNC_CONFIG } from '../config/syncConfig';
-import { TELEGRAM_CONFIG } from '../config/telegramConfig';
+import { TELEGRAM_CONFIG, TELEGRAM_REFRESH_SLOTS_UTC } from '../config/telegramConfig';
 import { getReadPostIds, getFavoritePostIds } from './bloggerFeed';
 import {
   getFeedMeta,
@@ -13,15 +12,35 @@ const ACCADE_OGGI_FEED_KEY = 'accade_oggi';
 
 let inMemoryAccadeOggiPosts: BloggerPost[] = [];
 let inMemoryAccadeOggiTimestamp = 0;
+let inMemoryLastCheckedAt = 0;
+let inMemoryLastFailedAttempt = 0;
+
+/**
+ * Errore sollevato quando l'aggiornamento di rete fallisce, ma sono disponibili post in cache.
+ * Consente al chiamante di mostrare i post memorizzati e notificare l'utente con un avviso discreto.
+ */
+export class UpdateFailedWithCacheError extends Error {
+  cachedPosts: BloggerPost[];
+  constructor(message: string, cachedPosts: BloggerPost[]) {
+    super(message);
+    this.name = 'UpdateFailedWithCacheError';
+    this.cachedPosts = cachedPosts;
+  }
+}
 
 /**
  * Inizializza i post di Accade Oggi caricandoli da IndexedDB (store feed_meta).
  * Il feed di Accade Oggi è rigorosamente separato dall'archivio degli articoli del Magazine.
  */
-export async function initAccadeOggiStorage(): Promise<BloggerPost[]> {
+export async function initAccadeOggiStorage(): Promise<{
+  posts: BloggerPost[];
+  lastCheckedAt: number;
+  downloadedAt: number;
+}> {
   try {
     const meta = await getFeedMeta(ACCADE_OGGI_FEED_KEY);
     inMemoryAccadeOggiTimestamp = meta?.downloadedAt || 0;
+    inMemoryLastCheckedAt = meta?.lastCheckedAt || inMemoryAccadeOggiTimestamp;
 
     if (meta && Array.isArray(meta.posts) && meta.posts.length > 0) {
       inMemoryAccadeOggiPosts = meta.posts.slice(0, ACCADE_OGGI_MAX_POSTS);
@@ -29,11 +48,19 @@ export async function initAccadeOggiStorage(): Promise<BloggerPost[]> {
   } catch {
     // In-memory fallback
   }
-  return inMemoryAccadeOggiPosts;
+  return {
+    posts: inMemoryAccadeOggiPosts,
+    lastCheckedAt: inMemoryLastCheckedAt,
+    downloadedAt: inMemoryAccadeOggiTimestamp,
+  };
 }
 
 export function getAccadeOggiCacheTimestamp(): number {
   return inMemoryAccadeOggiTimestamp;
+}
+
+export function getAccadeOggiLastCheckedAt(): number {
+  return inMemoryLastCheckedAt;
 }
 
 export function saveAccadeOggiCacheTimestamp(ts: number = Date.now()): void {
@@ -46,19 +73,121 @@ export function getCachedAccadeOggiPosts(): BloggerPost[] {
 
 /**
  * Salva i post di Accade Oggi in memoria e in IndexedDB (nello store feed_meta).
- * IMPORTANTE: NON vengono salvati nello store degli articoli del Magazine,
- * evitando che appaiano in "Il mio archivio" o nei conteggi dei badge.
+ * Salva sia il timestamp di download (downloadedAt) che la data dell'ultimo controllo (lastCheckedAt).
+ * NON tocca l'archivio degli articoli del Magazine.
  */
-export function saveCachedAccadeOggiPosts(posts: BloggerPost[]): void {
+export function saveCachedAccadeOggiPosts(posts: BloggerPost[], lastCheckedAt: number = Date.now()): void {
   const limited = posts.slice(0, ACCADE_OGGI_MAX_POSTS);
   inMemoryAccadeOggiPosts = limited;
   inMemoryAccadeOggiTimestamp = Date.now();
+  inMemoryLastCheckedAt = lastCheckedAt;
 
   setFeedMeta(ACCADE_OGGI_FEED_KEY, {
     downloadedAt: inMemoryAccadeOggiTimestamp,
+    lastCheckedAt: inMemoryLastCheckedAt,
     postIds: limited.map((p) => p.id),
     posts: limited,
   }).catch(() => {});
+}
+
+/**
+ * Aggiorna la data dell'ultimo controllo (lastCheckedAt) in IndexedDB,
+ * utile quando il feed scaricato non contiene nuovi articoli rispetto a quelli già in cache.
+ */
+export async function updateAccadeOggiLastCheckedAt(lastCheckedAt: number = Date.now()): Promise<void> {
+  inMemoryLastCheckedAt = lastCheckedAt;
+  try {
+    const meta = await getFeedMeta(ACCADE_OGGI_FEED_KEY);
+    await setFeedMeta(ACCADE_OGGI_FEED_KEY, {
+      downloadedAt: meta?.downloadedAt || inMemoryAccadeOggiTimestamp || lastCheckedAt,
+      lastCheckedAt,
+      postIds: meta?.postIds || inMemoryAccadeOggiPosts.map((p) => p.id),
+      posts: meta?.posts || inMemoryAccadeOggiPosts,
+    });
+  } catch {
+    // Fallback in-memory già impostato
+  }
+}
+
+/**
+ * Calcola la data/ora UTC dell'ultimo slot di refresh già trascorso.
+ * Esempi con TELEGRAM_REFRESH_SLOTS_UTC = ["08:10", "19:10"]:
+ * - Alle 07:00 UTC di oggi -> 19:10 UTC di ieri
+ * - Alle 08:05 UTC di oggi -> 19:10 UTC di ieri
+ * - Alle 08:20 UTC di oggi -> 08:10 UTC di oggi
+ * - Alle 19:30 UTC di oggi -> 19:10 UTC di oggi
+ *
+ * @param now Data corrente (default: new Date())
+ * @param slots Elenco degli slot in formato "HH:MM" UTC (default: TELEGRAM_REFRESH_SLOTS_UTC)
+ * @returns Date dell'ultimo slot già trascorso in UTC
+ */
+export function getLastPassedSlotUTC(
+  now: Date = new Date(),
+  slots: readonly string[] = TELEGRAM_REFRESH_SLOTS_UTC
+): Date {
+  const currentUtcMs = now.getTime();
+  const candidates: Date[] = [];
+
+  // Consideriamo oggi (daysAgo = 0) e ieri (daysAgo = 1) in UTC
+  for (let daysAgo = 0; daysAgo <= 1; daysAgo++) {
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth();
+    const day = now.getUTCDate() - daysAgo;
+
+    for (const slot of slots) {
+      const [hStr, mStr] = slot.split(':');
+      const hour = parseInt(hStr, 10);
+      const min = parseInt(mStr, 10);
+
+      const slotDate = new Date(Date.UTC(year, month, day, hour, min, 0, 0));
+      if (slotDate.getTime() <= currentUtcMs) {
+        candidates.push(slotDate);
+      }
+    }
+  }
+
+  // Ordina in modo decrescente: il primo è il più recente già trascorso
+  candidates.sort((a, b) => b.getTime() - a.getTime());
+
+  return candidates[0];
+}
+
+/**
+ * Determina se il feed Telegram necessita di un nuovo download di rete in base agli slot UTC:
+ * - Se lastCheckedAt non esiste o <= 0 -> true
+ * - Se lastCheckedAt è più vecchio di 24 ore -> true
+ * - Se lastCheckedAt è precedente all'ultimo slot già passato in UTC -> true
+ * - Se un tentativo recente è fallito (< 15 min fa) -> false (cooldown per evitare richieste ripetute)
+ */
+export function shouldRefreshTelegramFeed(
+  lastCheckedAt?: number | null,
+  now: Date = new Date(),
+  lastFailedAttempt: number = inMemoryLastFailedAttempt
+): boolean {
+  const nowMs = now.getTime();
+
+  // 1. Se una richiesta recente è fallita (< 15 min fa), rispetta il cooldown
+  if (lastFailedAttempt > 0 && nowMs - lastFailedAttempt < TELEGRAM_CONFIG.RETRY_FAILED_COOLDOWN_MS) {
+    return false;
+  }
+
+  // 2. Se non esiste una verifica precedente
+  if (!lastCheckedAt || lastCheckedAt <= 0) {
+    return true;
+  }
+
+  // 3. Se l'ultimo controllo è più vecchio di 24 ore
+  if (nowMs - lastCheckedAt >= TELEGRAM_CONFIG.MAX_STALE_TTL_MS) {
+    return true;
+  }
+
+  // 4. Se lastCheckedAt è precedente all'ultimo slot già trascorso in UTC
+  const lastPassedSlot = getLastPassedSlotUTC(now);
+  if (lastCheckedAt < lastPassedSlot.getTime()) {
+    return true;
+  }
+
+  return false;
 }
 
 function cleanHtmlEntities(str: string): string {
@@ -232,84 +361,90 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
 }
 
 /**
- * Calcola l'URL risolto del feed Telegram configurabile.
- * Se configurato come percorso relativo (es. 'telegram.xml'), antepone il base path.
- */
-function resolveTelegramFeedUrl(): string {
-  const configured = TELEGRAM_CONFIG.FEED_URL.trim();
-  if (configured.startsWith('http://') || configured.startsWith('https://')) {
-    return configured;
-  }
-  const base = typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL ? import.meta.env.BASE_URL : '/';
-  const cleanBase = base.endsWith('/') ? base : `${base}/`;
-  if (configured.startsWith('/')) {
-    return `${cleanBase}${configured.slice(1)}`;
-  }
-  return `${cleanBase}${configured}`;
-}
-
-/**
- * Carica il feed di Accade Oggi dalla sorgente primaria configurata (file statico telegram.xml).
- * In caso di offline restituisce la cache salvata in precedenza.
- * Rimosse tutte le dipendenze da rss-bridge pubblici e allorigins.win.
+ * Carica il feed Telegram da Cloudflare Worker tramite fetch standard.
+ *
+ * Regole di aggiornamento:
+ * - All'apertura (o al ritorno in primo piano), calcola l'ultimo slot UTC già passato.
+ * - Se lastCheckedAt è precedente allo slot, o ha più di 24 ore, o non esiste:
+ *   esegue fetch(url, { cache: "no-cache" }).
+ * - Aggiorna lastCheckedAt anche se il feed non ha articoli nuovi (evita richieste a ogni riapertura).
+ * - Se la richiesta fallisce: NON aggiorna lastCheckedAt (riproverà alla prossima apertura, max 1 volta ogni 15 min),
+ *   e se ci sono dati salvati solleva UpdateFailedWithCacheError.
  */
 export async function fetchAccadeOggiPosts(options?: {
   forceRefresh?: boolean;
 }): Promise<BloggerPost[]> {
   const cached = getCachedAccadeOggiPosts();
-  const lastFetch = (await getFeedDownloadedAt(ACCADE_OGGI_FEED_KEY)) || getAccadeOggiCacheTimestamp();
-  const isFresh = lastFetch > 0 && Date.now() - lastFetch < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+  const now = new Date();
+  const nowMs = now.getTime();
 
-  // Se la cache è fresca (< 6 ore) e non è richiesto refresh forzato, restituisci subito
-  if (!options?.forceRefresh && isFresh && cached.length > 0) {
+  // Recupera lastCheckedAt da IndexedDB se non presente in memoria
+  if (!inMemoryLastCheckedAt) {
+    const meta = await getFeedMeta(ACCADE_OGGI_FEED_KEY);
+    inMemoryLastCheckedAt = meta?.lastCheckedAt || meta?.downloadedAt || 0;
+  }
+
+  const needsRefresh = options?.forceRefresh || shouldRefreshTelegramFeed(inMemoryLastCheckedAt, now, inMemoryLastFailedAttempt);
+
+  // In caso di offline del dispositivo
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (cached.length > 0) {
+      return cached;
+    }
+    throw new Error('Impossibile contattare la fonte dei dati');
+  }
+
+  // Se non occorre aggiornare (cache valida e slot non superato), usa i dati salvati
+  if (!needsRefresh && cached.length > 0) {
     return cached;
   }
 
-  // Se il dispositivo è offline, restituisci la cache
-  if (typeof navigator !== 'undefined' && !navigator.onLine && cached.length > 0) {
-    return cached;
+  // Se in cooldown da tentativo fallito e non è un refresh manuale forzato dall'utente
+  if (!options?.forceRefresh && inMemoryLastFailedAttempt > 0 && nowMs - inMemoryLastFailedAttempt < TELEGRAM_CONFIG.RETRY_FAILED_COOLDOWN_MS) {
+    if (cached.length > 0) {
+      return cached;
+    }
+    throw new Error('Impossibile contattare la fonte dei dati');
   }
 
-  const primaryUrl = resolveTelegramFeedUrl();
+  const feedUrl = TELEGRAM_CONFIG.FEED_URL;
 
-  // 1. Sorgente primaria: file statico configurato (telegram.xml)
   try {
-    const res = await fetch(primaryUrl, {
-      cache: options?.forceRefresh ? 'reload' : 'default',
+    const res = await fetch(feedUrl, {
+      cache: 'no-cache',
     });
-    if (res.ok) {
-      const xml = await res.text();
-      const parsed = parseAtomXmlToPosts(xml);
-      if (parsed.length > 0) {
-        saveCachedAccadeOggiPosts(parsed);
-        return parsed;
-      }
+
+    if (!res.ok) {
+      throw new Error(`Stato HTTP non valido: ${res.status}`);
     }
-  } catch (e) {
-    // Prova il fallback locale se presente
-  }
 
-  // 2. Fallback secondario: endpoint server locale /api/accade-oggi-feed (se su server Express)
-  if (primaryUrl !== '/api/accade-oggi-feed') {
-    try {
-      const res = await fetch('/api/accade-oggi-feed');
-      if (res.ok) {
-        const xml = await res.text();
-        const parsed = parseAtomXmlToPosts(xml);
-        if (parsed.length > 0) {
-          saveCachedAccadeOggiPosts(parsed);
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignora errore server
+    const xml = await res.text();
+    const parsed = parseAtomXmlToPosts(xml);
+
+    // Reset cooldown ed aggiornamento di lastCheckedAt (anche se non ci sono nuovi post)
+    inMemoryLastFailedAttempt = 0;
+    inMemoryLastCheckedAt = nowMs;
+
+    if (parsed.length > 0) {
+      saveCachedAccadeOggiPosts(parsed, nowMs);
+      return parsed;
+    } else if (cached.length > 0) {
+      await updateAccadeOggiLastCheckedAt(nowMs);
+      return cached;
+    } else {
+      throw new Error('Nessun elemento nel feed');
     }
-  }
+  } catch (err: any) {
+    // Registra timestamp del fallimento per il cooldown di 15 minuti
+    inMemoryLastFailedAttempt = nowMs;
+    // IMPORTANTE: NON aggiorniamo lastCheckedAt, così riproverà alla prossima apertura / focus
 
-  // 3. Fallback: se la rete fallisce ma abbiamo dati in cache, usali
-  if (cached.length > 0) {
-    return cached;
-  }
+    console.warn('Errore download feed Telegram dal Worker:', err);
 
-  throw new Error('Impossibile scaricare il feed di Accade Oggi da telegram.xml al momento.');
+    if (cached.length > 0) {
+      throw new UpdateFailedWithCacheError('Aggiornamento non riuscito, contenuti salvati', cached);
+    }
+
+    throw new Error('Impossibile contattare la fonte dei dati');
+  }
 }

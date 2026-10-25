@@ -77,6 +77,7 @@ import {
   getCachedAccadeOggiPosts,
   getAccadeOggiCacheTimestamp,
   initAccadeOggiStorage,
+  UpdateFailedWithCacheError,
 } from './services/accadeOggiFeed';
 import { NAV_SECTIONS, GOOGLE_NOTEBOOK_URL } from './config/navigation';
 import { openNotebookWithPriority } from './utils/notebookLauncher';
@@ -179,6 +180,23 @@ export default function App() {
     [notifications]
   );
 
+  // Section load error tracking for empty-cache failure states
+  const [sectionErrors, setSectionErrors] = useState<Record<string, boolean>>({});
+
+  // Discreet auto-closing banner notice ("Aggiornamento non riuscito, contenuti salvati")
+  const [discreetNotice, setDiscreetNotice] = useState<string | null>(null);
+  const discreetNoticeTimerRef = useRef<any>(null);
+
+  const showDiscreetNotice = useCallback((msg: string) => {
+    if (discreetNoticeTimerRef.current) {
+      clearTimeout(discreetNoticeTimerRef.current);
+    }
+    setDiscreetNotice(msg);
+    discreetNoticeTimerRef.current = setTimeout(() => {
+      setDiscreetNotice(null);
+    }, 4000);
+  }, []);
+
   // Stale-While-Revalidate: background load & revalidation of main feed (15 items)
   const loadFeed = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
@@ -188,6 +206,7 @@ export default function App() {
         startIndex: 1,
         forceRefresh: isManualRefresh,
       });
+      setSectionErrors((prev) => ({ ...prev, all: false }));
 
       setPosts((prev) => {
         // Detect newly published articles compared to previous cache
@@ -247,17 +266,24 @@ export default function App() {
       setMainFeedHasMore(res.hasMore);
     } catch (err) {
       console.error('Errore caricamento feed:', err);
+      if (postsRef.current.length > 0) {
+        showDiscreetNotice('Aggiornamento non riuscito, contenuti salvati');
+        setSectionErrors((prev) => ({ ...prev, all: false }));
+      } else {
+        setSectionErrors((prev) => ({ ...prev, all: true }));
+      }
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [showDiscreetNotice]);
 
   // Accade Oggi: background load & revalidation of Atom feed (strictly 15 items max)
   const loadAccadeOggiFeed = useCallback(async (isManualRefresh = false) => {
     if (isManualRefresh) setIsRefreshing(true);
     try {
       const fetched = await fetchAccadeOggiPosts({ forceRefresh: isManualRefresh });
+      setSectionErrors((prev) => ({ ...prev, today: false }));
 
       setAccadeOggiPosts((prev) => {
         // Detect newly published articles compared to previous cache
@@ -298,13 +324,23 @@ export default function App() {
           isFavorite: favIds.has(p.id),
         }));
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Errore caricamento feed Accade Oggi:', err);
+      const hasCached = getCachedAccadeOggiPosts().length > 0;
+      if (err instanceof UpdateFailedWithCacheError || hasCached) {
+        if (err.cachedPosts && err.cachedPosts.length > 0) {
+          setAccadeOggiPosts(err.cachedPosts);
+        }
+        showDiscreetNotice('Aggiornamento non riuscito, contenuti salvati');
+        setSectionErrors((prev) => ({ ...prev, today: false }));
+      } else {
+        setSectionErrors((prev) => ({ ...prev, today: true }));
+      }
     } finally {
       setIsAccadeOggiLoading(false);
       if (isManualRefresh) setIsRefreshing(false);
     }
-  }, []);
+  }, [showDiscreetNotice]);
 
   useEffect(() => {
     // 1. Pulizia vecchie chiavi localStorage e richiesta persistenza IndexedDB
@@ -332,17 +368,14 @@ export default function App() {
     // Inizializza archivio badge da IndexedDB
     initBadgesStorage().catch(() => {});
 
-    // Inizializza feed Accade Oggi da IndexedDB (stale-while-revalidate: circa 6 ore)
-    initAccadeOggiStorage().then((aoPosts) => {
+    // Inizializza feed Accade Oggi da IndexedDB
+    initAccadeOggiStorage().then(({ posts: aoPosts }) => {
       if (aoPosts.length > 0) {
         setAccadeOggiPosts(aoPosts);
         setIsAccadeOggiLoading(false);
       }
-      const lastAo = getAccadeOggiCacheTimestamp();
-      const isAoFresh = lastAo > 0 && Date.now() - lastAo < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
-      if (!isAoFresh || aoPosts.length === 0) {
-        loadAccadeOggiFeed(false);
-      }
+      // Verifica all'apertura in base agli slot UTC / 24 ore
+      loadAccadeOggiFeed(false);
     }).catch(() => {
       loadAccadeOggiFeed(false);
     });
@@ -362,23 +395,30 @@ export default function App() {
       loadFeed(false);
     });
 
-    // 2) Se l'app resta aperta: controlla periodicamente
-    const interval = setInterval(() => {
+    // 2) Controllo all'apertura e al ritorno in primo piano (focus / visibilitychange)
+    const handleForeground = () => {
       if (document.visibilityState === 'visible') {
+        // Verifica Accade Oggi con logica degli slot UTC e cooldown 15 minuti
+        loadAccadeOggiFeed(false);
+
+        // Verifica feed principale con intervallo 6 ore
         const lastFetchMain = getFeedCacheTimestamp();
         if (Date.now() - lastFetchMain >= FEED_SYNC_CONFIG.FOREGROUND_POLL_MS) {
           loadFeed(false);
         }
-
-        const lastFetchToday = getAccadeOggiCacheTimestamp();
-        if (Date.now() - lastFetchToday >= FEED_SYNC_CONFIG.FOREGROUND_POLL_MS) {
-          loadAccadeOggiFeed(false);
-        }
       }
-    }, 60000); // verifica ogni minuto se è trascorso l'intervallo mentre l'app è aperta
+    };
+
+    document.addEventListener('visibilitychange', handleForeground);
+    window.addEventListener('focus', handleForeground);
+
+    // 3) Se l'app resta aperta a lungo: ricontrolla ogni minuto
+    const interval = setInterval(handleForeground, 60000);
 
     return () => {
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleForeground);
+      window.removeEventListener('focus', handleForeground);
       cleanupSWListener();
     };
   }, [loadFeed, loadAccadeOggiFeed]);
@@ -452,6 +492,7 @@ export default function App() {
                 maxResults: 15,
               });
               if (!isCancelled) {
+                setSectionErrors((prev) => ({ ...prev, [catKey]: false }));
                 setCategoryFeeds((prev) => ({
                   ...prev,
                   [catKey]: {
@@ -480,19 +521,25 @@ export default function App() {
               }
             } catch (e) {
               console.warn('Errore nel caricamento del feed della categoria:', e);
-              // In caso di errore di rete, fallback sicuro su articoli locali
-              if (!categoryFeedsRef.current[catKey] && !isCancelled) {
-                const localMatches = postsRef.current.filter(
-                  (p) => Array.isArray(p.categories) && p.categories.some((c) => c.toLowerCase() === catKey.toLowerCase())
-                );
-                setCategoryFeeds((prev) => ({
-                  ...prev,
-                  [catKey]: {
-                    posts: localMatches,
-                    hasMore: false,
-                    totalResults: localMatches.length,
-                  },
-                }));
+              const cached = categoryFeedsRef.current[catKey]?.posts || [];
+              const localMatches = postsRef.current.filter(
+                (p) => Array.isArray(p.categories) && p.categories.some((c) => c.toLowerCase() === catKey.toLowerCase())
+              );
+              if (cached.length > 0 || localMatches.length > 0) {
+                showDiscreetNotice('Aggiornamento non riuscito, contenuti salvati');
+                setSectionErrors((prev) => ({ ...prev, [catKey]: false }));
+                if (!categoryFeedsRef.current[catKey] && !isCancelled) {
+                  setCategoryFeeds((prev) => ({
+                    ...prev,
+                    [catKey]: {
+                      posts: localMatches,
+                      hasMore: false,
+                      totalResults: localMatches.length,
+                    },
+                  }));
+                }
+              } else {
+                setSectionErrors((prev) => ({ ...prev, [catKey]: true }));
               }
             } finally {
               if (!isCancelled) setIsCategoryLoading(false);
@@ -718,6 +765,66 @@ export default function App() {
     isAccadeOggiLoading,
     isMainFeedLoadingMore,
   ]);
+
+  // Verifica se la sezione attiva ha fallito il caricamento con cache vuota
+  const currentViewLoadError = useMemo(() => {
+    if (activeFilter.type === 'quick') {
+      if (activeFilter.id === 'today') return Boolean(sectionErrors['today']);
+      if (activeFilter.id === 'all') return Boolean(sectionErrors['all']);
+      return false;
+    }
+    if (activeFilter.type === 'rss' && activeFilter.category) {
+      return Boolean(sectionErrors[activeFilter.category.trim()]);
+    }
+    return false;
+  }, [activeFilter, sectionErrors]);
+
+  const handleRetrySection = useCallback(() => {
+    if (activeFilter.type === 'quick' && activeFilter.id === 'today') {
+      setSectionErrors((prev) => ({ ...prev, today: false }));
+      setIsAccadeOggiLoading(true);
+      loadAccadeOggiFeed(true);
+    } else if (activeFilter.type === 'quick' && activeFilter.id === 'all') {
+      setSectionErrors((prev) => ({ ...prev, all: false }));
+      setIsLoading(true);
+      loadFeed(true);
+    } else if (activeFilter.type === 'rss' && activeFilter.category) {
+      const catKey = activeFilter.category.trim();
+      setSectionErrors((prev) => ({ ...prev, [catKey]: false }));
+      setIsCategoryLoading(true);
+      categoryLoadInFlightRef.current[catKey] = false;
+      fetchBloggerPosts({
+        category: catKey,
+        startIndex: 1,
+        maxResults: 15,
+        forceRefresh: true,
+      })
+        .then((res) => {
+          setCategoryFeeds((prev) => ({
+            ...prev,
+            [catKey]: {
+              posts: res.posts,
+              hasMore: res.hasMore,
+              totalResults: res.totalResults,
+            },
+          }));
+          setSectionErrors((prev) => ({ ...prev, [catKey]: false }));
+        })
+        .catch((err) => {
+          console.warn('Retry fallito per categoria:', err);
+          const cached = categoryFeedsRef.current[catKey]?.posts || [];
+          if (cached.length > 0) {
+            showDiscreetNotice('Aggiornamento non riuscito, contenuti salvati');
+            setSectionErrors((prev) => ({ ...prev, [catKey]: false }));
+          } else {
+            setSectionErrors((prev) => ({ ...prev, [catKey]: true }));
+          }
+        })
+        .finally(() => {
+          setIsCategoryLoading(false);
+        });
+    }
+  }, [activeFilter, loadAccadeOggiFeed, loadFeed, showDiscreetNotice]);
 
   // Filter Title label & search placeholder
   const isAllArchive = activeFilter.type === 'quick' && activeFilter.id === 'all';
@@ -1188,6 +1295,8 @@ export default function App() {
             isLoadingMore={isCurrentViewLoadingMore}
             hasMore={currentViewHasMore}
             onLoadMore={handleLoadMore}
+            loadError={currentViewLoadError}
+            onRetry={handleRetrySection}
             activeFilter={activeFilter}
             filterTitle={filterTitle}
             searchQuery={searchQuery}
@@ -1209,6 +1318,23 @@ export default function App() {
           />
         </main>
       </div>
+
+      {/* Avviso discreto auto-chiudente ("Aggiornamento non riuscito, contenuti salvati") */}
+      {discreetNotice && (
+        <div className="fixed top-20 right-4 sm:right-6 z-50 animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-auto">
+          <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-md shadow-lg border border-slate-700/60 text-xs font-medium">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span>{discreetNotice}</span>
+            <button
+              onClick={() => setDiscreetNotice(null)}
+              className="ml-1 p-0.5 text-slate-400 hover:text-white rounded transition cursor-pointer"
+              aria-label="Chiudi avviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Toast Notification when new post push arrives */}
       {toastNotification && (
