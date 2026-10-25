@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ArticleList } from './components/ArticleList';
@@ -56,6 +56,7 @@ import {
   cleanupOldLocalStorageKeys,
   requestPersistentStorage,
   saveArticlesToDB,
+  isMagazineArticle,
 } from './utils/idbStorage';
 import { initBadgesStorage } from './services/badgeService';
 import { FEED_SYNC_CONFIG } from './config/syncConfig';
@@ -131,6 +132,13 @@ export default function App() {
   const [categoryFeeds, setCategoryFeeds] = useState<Record<string, CategoryFeedState>>({});
   const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [isCategoryLoadingMore, setIsCategoryLoadingMore] = useState(false);
+
+  // Refs per evitare cicli infiniti di ri-render / spike CPU nei caricamenti on-demand
+  const categoryFeedsRef = useRef<Record<string, CategoryFeedState>>({});
+  categoryFeedsRef.current = categoryFeeds;
+  const categoryLoadInFlightRef = useRef<Record<string, boolean>>({});
+  const postsRef = useRef<BloggerPost[]>(posts);
+  postsRef.current = posts;
 
   // Accade Oggi feed (strictly at most 15 posts, separate from archive)
   const [accadeOggiPosts, setAccadeOggiPosts] = useState<BloggerPost[]>(() => getCachedAccadeOggiPosts());
@@ -382,70 +390,116 @@ export default function App() {
     if (activeFilter.type === 'rss' && activeFilter.category) {
       const catKey = activeFilter.category.trim();
 
+      // Se già in caricamento per questa categoria, non avviare una richiesta concorrente
+      if (categoryLoadInFlightRef.current[catKey]) {
+        return;
+      }
+
       const loadCategory = async () => {
-        // 1. Prova prima la cache da IndexedDB per risposta istantanea (0ms)
-        if (!categoryFeeds[catKey]) {
-          const cached = await getCategoryFeedCache(catKey);
-          if (cached && !isCancelled) {
-            setCategoryFeeds((prev) => ({
-              ...prev,
-              [catKey]: {
-                posts: cached.posts,
-                hasMore: cached.hasMore,
-                totalResults: cached.totalResults,
-              },
-            }));
-            const isFresh = Date.now() - cached.downloadedAt < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
-            if (isFresh || !navigator.onLine) {
-              return; // Già fresco (<6 ore) o offline: niente richiesta di rete
-            }
-          }
-        }
+        categoryLoadInFlightRef.current[catKey] = true;
 
-        // 2. Se non in cache o scaduto (> 6 ore): scarica dal network
-        const downloadedAt = await getCategoryDownloadedAt(catKey);
-        const needsUpdate = !categoryFeeds[catKey] || downloadedAt === 0 || Date.now() - downloadedAt >= FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
-
-        if (needsUpdate) {
-          if (!categoryFeeds[catKey]) setIsCategoryLoading(true);
-          try {
-            const res = await fetchBloggerPosts({
-              category: catKey,
-              startIndex: 1,
-              maxResults: 15,
-            });
-            if (!isCancelled) {
+        try {
+          // 1. Prova prima la cache da IndexedDB per risposta istantanea (0ms)
+          if (!categoryFeedsRef.current[catKey]) {
+            const cached = await getCategoryFeedCache(catKey);
+            if (cached && !isCancelled) {
               setCategoryFeeds((prev) => ({
                 ...prev,
                 [catKey]: {
-                  posts: res.posts,
-                  hasMore: res.hasMore,
-                  totalResults: res.totalResults,
+                  posts: cached.posts,
+                  hasMore: cached.hasMore,
+                  totalResults: cached.totalResults,
                 },
               }));
-
-              // Unisci con i post globali per ricerca locale e conteggi badge
-              setPosts((prev) => {
-                const map = new Map<string, BloggerPost>();
-                for (const p of prev) map.set(p.id, p);
-                for (const p of res.posts) {
-                  const existing = map.get(p.id);
-                  map.set(
-                    p.id,
-                    existing ? { ...p, isRead: existing.isRead, isFavorite: existing.isFavorite } : p
-                  );
-                }
-                const merged = Array.from(map.values());
-                merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
-                saveArticlesToDB(merged).catch(() => {});
-                return merged;
-              });
+              const isFresh = Date.now() - cached.downloadedAt < FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+              if (isFresh || !navigator.onLine) {
+                return; // Già fresco (<6 ore) o offline: terminato senza chiamate di rete
+              }
             }
-          } catch (e) {
-            console.warn('Errore nel caricamento del feed della categoria:', e);
-          } finally {
-            if (!isCancelled) setIsCategoryLoading(false);
           }
+
+          // 2. Se offline e non presente in IndexedDB: popola con gli articoli già presenti in locale nel Magazine
+          if (!navigator.onLine) {
+            if (!categoryFeedsRef.current[catKey] && !isCancelled) {
+              const localMatches = postsRef.current.filter(
+                (p) => Array.isArray(p.categories) && p.categories.some((c) => c.toLowerCase() === catKey.toLowerCase())
+              );
+              setCategoryFeeds((prev) => ({
+                ...prev,
+                [catKey]: {
+                  posts: localMatches,
+                  hasMore: false,
+                  totalResults: localMatches.length,
+                },
+              }));
+            }
+            return;
+          }
+
+          // 3. Se online e non in cache o scaduto (> 6 ore): scarica dal network
+          const downloadedAt = await getCategoryDownloadedAt(catKey);
+          const needsUpdate =
+            !categoryFeedsRef.current[catKey] ||
+            downloadedAt === 0 ||
+            Date.now() - downloadedAt >= FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
+
+          if (needsUpdate && !isCancelled) {
+            if (!categoryFeedsRef.current[catKey]) setIsCategoryLoading(true);
+            try {
+              const res = await fetchBloggerPosts({
+                category: catKey,
+                startIndex: 1,
+                maxResults: 15,
+              });
+              if (!isCancelled) {
+                setCategoryFeeds((prev) => ({
+                  ...prev,
+                  [catKey]: {
+                    posts: res.posts,
+                    hasMore: res.hasMore,
+                    totalResults: res.totalResults,
+                  },
+                }));
+
+                // Unisci con i post globali del Magazine per ricerca locale e conteggi badge
+                setPosts((prev) => {
+                  const map = new Map<string, BloggerPost>();
+                  for (const p of prev) map.set(p.id, p);
+                  for (const p of res.posts) {
+                    const existing = map.get(p.id);
+                    map.set(
+                      p.id,
+                      existing ? { ...p, isRead: existing.isRead, isFavorite: existing.isFavorite } : p
+                    );
+                  }
+                  const merged = Array.from(map.values());
+                  merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
+                  saveArticlesToDB(merged).catch(() => {});
+                  return merged;
+                });
+              }
+            } catch (e) {
+              console.warn('Errore nel caricamento del feed della categoria:', e);
+              // In caso di errore di rete, fallback sicuro su articoli locali
+              if (!categoryFeedsRef.current[catKey] && !isCancelled) {
+                const localMatches = postsRef.current.filter(
+                  (p) => Array.isArray(p.categories) && p.categories.some((c) => c.toLowerCase() === catKey.toLowerCase())
+                );
+                setCategoryFeeds((prev) => ({
+                  ...prev,
+                  [catKey]: {
+                    posts: localMatches,
+                    hasMore: false,
+                    totalResults: localMatches.length,
+                  },
+                }));
+              }
+            } finally {
+              if (!isCancelled) setIsCategoryLoading(false);
+            }
+          }
+        } finally {
+          categoryLoadInFlightRef.current[catKey] = false;
         }
       };
 
@@ -455,7 +509,7 @@ export default function App() {
     return () => {
       isCancelled = true;
     };
-  }, [activeFilter, categoryFeeds]);
+  }, [activeFilter]);
 
   // Pagination: "Carica altri articoli" handler
   const handleLoadMore = useCallback(async () => {

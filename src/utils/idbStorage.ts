@@ -24,6 +24,7 @@ export interface FeedMeta {
   postIds: string[];
   totalResults?: number;
   hasMore?: boolean;
+  posts?: BloggerPost[];
 }
 
 // In-memory fallback stores (used if IndexedDB is unavailable or errors)
@@ -74,6 +75,9 @@ export function cleanupOldLocalStorageKeys(): void {
       // ignore
     }
   }
+
+  // Assicura che articoli Telegram vengano rimossi dallo store 'articles'
+  cleanLegacyAccadeOggiFromArticlesStore().catch(() => {});
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -138,6 +142,45 @@ function openDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
+export function isMagazineArticle(p: BloggerPost): boolean {
+  if (!p) return false;
+  if (p.isAccadeOggi) return false;
+  if (Array.isArray(p.categories) && p.categories.some((c) => c.toLowerCase() === 'accade oggi')) return false;
+  if (typeof p.id === 'string' && (p.id.includes('t.me/') || p.id.startsWith('today-'))) return false;
+  return true;
+}
+
+/**
+ * Rimuove eventuali articoli legacy di Accade Oggi accidentalmente salvati nello store 'articles'.
+ */
+export async function cleanLegacyAccadeOggiFromArticlesStore(): Promise<void> {
+  // Pulisci cache in memoria
+  for (const [id, post] of memoryArticles.entries()) {
+    if (!isMagazineArticle(post)) {
+      memoryArticles.delete(id);
+    }
+  }
+
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORES.ARTICLES, 'readwrite');
+    const store = tx.objectStore(STORES.ARTICLES);
+    const req = store.getAll();
+    req.onsuccess = () => {
+      const all = req.result;
+      if (Array.isArray(all)) {
+        for (const item of all) {
+          if (!isMagazineArticle(item)) {
+            store.delete(item.id);
+          }
+        }
+      }
+    };
+  } catch {
+    // ignore
+  }
+}
+
 // ============================================================================
 // ARTICLES STORE
 // ============================================================================
@@ -150,7 +193,8 @@ export async function getAllArticlesFromDB(): Promise<BloggerPost[]> {
       const store = tx.objectStore(STORES.ARTICLES);
       const req = store.getAll();
       req.onsuccess = () => {
-        const posts = Array.isArray(req.result) ? (req.result as BloggerPost[]) : [];
+        const raw = Array.isArray(req.result) ? (req.result as BloggerPost[]) : [];
+        const posts = raw.filter(isMagazineArticle);
         posts.sort((a, b) => {
           const diff = new Date(b.published).getTime() - new Date(a.published).getTime();
           if (diff !== 0) return diff;
@@ -159,19 +203,21 @@ export async function getAllArticlesFromDB(): Promise<BloggerPost[]> {
         resolve(posts);
       };
       req.onerror = () => {
-        resolve(Array.from(memoryArticles.values()));
+        const mem = Array.from(memoryArticles.values()).filter(isMagazineArticle);
+        resolve(mem);
       };
     });
   } catch {
-    const list = Array.from(memoryArticles.values());
+    const list = Array.from(memoryArticles.values()).filter(isMagazineArticle);
     list.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
     return list;
   }
 }
 
 export async function saveArticlesToDB(posts: BloggerPost[]): Promise<void> {
+  const magazinePosts = posts.filter(isMagazineArticle);
   // Always update in-memory fallback
-  for (const p of posts) {
+  for (const p of magazinePosts) {
     if (p.id) memoryArticles.set(p.id, p);
   }
 
@@ -180,7 +226,7 @@ export async function saveArticlesToDB(posts: BloggerPost[]): Promise<void> {
     return new Promise((resolve) => {
       const tx = db.transaction(STORES.ARTICLES, 'readwrite');
       const store = tx.objectStore(STORES.ARTICLES);
-      for (const post of posts) {
+      for (const post of magazinePosts) {
         if (post && post.id) {
           store.put(post);
         }

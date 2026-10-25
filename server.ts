@@ -840,12 +840,7 @@ app.get('/api/telegram-view', async (req, res) => {
   }
 });
 
-// 6. Accade Oggi RSS (Atom) proxy endpoint with automatic fallback and caching
-const ACCADE_OGGI_PRIMARY =
-  'https://rss-bridge.org/bridge01/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
-const ACCADE_OGGI_FALLBACK =
-  'https://rss-bridge.ggc-project.de/?action=display&username=magazine5LB&bridge=TelegramBridge&format=Atom';
-
+// 6. Accade Oggi RSS (Atom) proxy endpoint with local telegram.xml as primary source
 app.get('/api/accade-oggi-feed', async (req, res) => {
   const cacheKey = 'accade-oggi-feed';
   const cached = cacheStore.get(cacheKey);
@@ -856,55 +851,19 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
     return sendCachedResponse(req, res, cached, 'HIT');
   }
 
-  const fetchWithTimeout = async (url: string) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-      const headers: Record<string, string> = {
-        'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
-        Accept: 'application/atom+xml, application/xml, text/xml, */*',
-      };
-      if (cached?.lastModified) {
-        headers['If-Modified-Since'] = cached.lastModified;
-      }
-      if (cached?.etag) {
-        headers['If-None-Match'] = cached.etag;
-      }
-
-      const resp = await fetch(url, {
-        signal: controller.signal,
-        headers,
-      });
-      clearTimeout(timer);
-      return resp;
-    } catch (err) {
-      clearTimeout(timer);
-      throw err;
-    }
-  };
-
+  // 1. Try static relative file (public/telegram.xml) first
   try {
-    let resp: Response | null = null;
-    try {
-      resp = await fetchWithTimeout(ACCADE_OGGI_PRIMARY);
-    } catch (errPrimary) {
-      console.warn('Primary rss-bridge failed, trying fallback rss-bridge:', errPrimary);
-      try {
-        resp = await fetchWithTimeout(ACCADE_OGGI_FALLBACK);
-      } catch (errFallback) {
-        console.warn('Fallback rss-bridge failed:', errFallback);
-      }
-    }
-
-    if (resp && resp.status === 304 && cached) {
-      cacheStore.renew(cacheKey, ttlMs);
-      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
-    }
-
-    if (resp && resp.ok) {
-      const xmlContent = await resp.text();
-      const lastModified = resp.headers.get('last-modified') || new Date().toUTCString();
+    const staticXmlPath = path.resolve(__dirname, 'public', 'telegram.xml');
+    if (fs.existsSync(staticXmlPath)) {
+      const xmlContent = fs.readFileSync(staticXmlPath, 'utf-8');
+      const stat = fs.statSync(staticXmlPath);
+      const lastModified = stat.mtime.toUTCString();
       const etag = computeETag(xmlContent);
+
+      if (cached && cached.etag === etag) {
+        cacheStore.renew(cacheKey, ttlMs);
+        return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
+      }
 
       const newEntry = cacheStore.set(cacheKey, {
         body: xmlContent,
@@ -916,21 +875,16 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
 
       return sendCachedResponse(req, res, newEntry, 'MISS');
     }
-
-    // Upstream failed or returned error: if we have any cached data (even expired), serve it to avoid app disruption!
-    if (cached) {
-      console.warn('Upstream rss-bridge unavailable, serving stale cached Accade Oggi feed');
-      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
-    }
-
-    return res.status(502).json({ error: 'Unable to retrieve Accade Oggi feed from rss-bridge' });
-  } catch (error: any) {
-    console.error('Error fetching Accade Oggi Atom feed:', error);
-    if (cached) {
-      return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
-    }
-    return res.status(502).json({ error: error.message || 'Unable to retrieve Accade Oggi feed' });
+  } catch (fsErr) {
+    console.warn('Could not read static telegram.xml:', fsErr);
   }
+
+  // 2. If cached is present, return it as fallback
+  if (cached) {
+    return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+  }
+
+  return res.status(404).json({ error: 'telegram.xml non trovato' });
 });
 
 // ============================================================================

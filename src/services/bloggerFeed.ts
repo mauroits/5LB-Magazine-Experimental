@@ -342,17 +342,20 @@ export async function fetchBloggerPosts(options?: {
     }
   }
 
-  // If offline and have cache, return cache immediately
-  if (!navigator.onLine && inMemoryCachedPosts.length > 0) {
-    let filtered = applyFilter(inMemoryCachedPosts, category);
-    if (q) {
-      filtered = filtered.filter((p) => postMatchesExactPhrase(p, q));
+  // If offline and have cache (memory or IndexedDB), return cache immediately
+  if (!navigator.onLine) {
+    const pool = inMemoryCachedPosts.length > 0 ? inMemoryCachedPosts : await getAllArticlesFromDB();
+    if (pool.length > 0) {
+      let filtered = applyFilter(pool, category);
+      if (q) {
+        filtered = filtered.filter((p) => postMatchesExactPhrase(p, q));
+      }
+      return {
+        posts: filtered.slice(startIndex - 1, startIndex - 1 + maxResults),
+        totalResults: filtered.length,
+        hasMore: startIndex + maxResults - 1 < filtered.length,
+      };
     }
-    return {
-      posts: filtered.slice(startIndex - 1, startIndex - 1 + maxResults),
-      totalResults: filtered.length,
-      hasMore: startIndex + maxResults - 1 < filtered.length,
-    };
   }
 
   // Sustainable rate check: if fetching general feed (page 1) without explicit forceRefresh,

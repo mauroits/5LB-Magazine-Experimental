@@ -65,6 +65,7 @@ export default defineConfig(() => {
           'logo-faviconBLU.png',
           'logoBLU_APP.jpg',
           'sw-sync.js',
+          'telegram.xml',
         ],
         manifest: {
           id: base,
@@ -110,9 +111,50 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,xml}'],
           importScripts: [`${base}sw-sync.js`],
           runtimeCaching: [
+            {
+              urlPattern: /.*telegram\.xml.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: '5lb-telegram-xml',
+                expiration: {
+                  maxEntries: 5,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              // Immagini degli articoli da Blogger, CDN Google, YouTube, Telegram e domini esterni
+              urlPattern: ({ request, url }) => {
+                return (
+                  request.destination === 'image' ||
+                  /\.(?:png|jpg|jpeg|svg|webp|gif|avif|ico)(?:\?.*)?$/i.test(url.pathname) ||
+                  url.hostname.includes('googleusercontent.com') ||
+                  url.hostname.includes('bp.blogspot.com') ||
+                  url.hostname.includes('blogger.com') ||
+                  url.hostname.includes('ytimg.com') ||
+                  url.hostname.includes('telesco.pe') ||
+                  url.hostname.includes('telegram.org') ||
+                  url.hostname.includes('t.me')
+                );
+              },
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: '5lb-article-images',
+                expiration: {
+                  maxEntries: 500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                },
+                cacheableResponse: {
+                  statuses: [0, 200], // 0 per risposte opache CDN cross-origin
+                },
+              },
+            },
             {
               urlPattern: /\/api\/(feed|post|check-updates).*/i,
               handler: 'NetworkFirst',
