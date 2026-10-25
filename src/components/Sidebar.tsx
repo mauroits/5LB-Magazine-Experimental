@@ -300,7 +300,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Scrollable Navigation Body */}
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60 select-none pb-6">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain divide-y divide-slate-100 dark:divide-slate-800/60 select-none pb-6">
           {/* Quick Filters Section */}
           <div className="py-2">
             {[

@@ -735,7 +735,7 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
         )}
 
         {/* Scrollable Article Body */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-5 sm:px-10 py-6">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto overscroll-y-contain px-5 sm:px-10 py-6">
           {/* Comment row if opened from Accade Oggi feed */}
           {post.isAccadeOggi && (
             <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-sky-50 via-blue-50/60 to-indigo-50/60 dark:from-slate-800 dark:via-slate-800/90 dark:to-slate-800 border border-sky-200 dark:border-slate-700 shadow-xs">

@@ -11,10 +11,16 @@
 }
 
 /* Ensure body handles safe-area insets cleanly on iOS Safari & Standalone */
+/* Disabilita il pull-to-refresh nativo del browser nella shell dell'app */
 html,
 body {
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
+  overscroll-behavior-y: none;
+}
+
+#root {
+  overscroll-behavior-y: none;
 }
 
 /* Blogger Article HTML Content Styling - Links & Lists */
