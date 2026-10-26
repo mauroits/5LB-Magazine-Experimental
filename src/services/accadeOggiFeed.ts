@@ -14,6 +14,7 @@ let inMemoryAccadeOggiPosts: BloggerPost[] = [];
 let inMemoryAccadeOggiTimestamp = 0;
 let inMemoryLastCheckedAt = 0;
 let inMemoryLastFailedAttempt = 0;
+let inFlightFetchPromise: Promise<BloggerPost[]> | null = null;
 
 /**
  * Errore sollevato quando l'aggiornamento di rete fallisce, ma sono disponibili post in cache.
@@ -153,11 +154,33 @@ export function getLastPassedSlotUTC(
 }
 
 /**
- * Determina se il feed Telegram necessita di un nuovo download di rete in base agli slot UTC:
- * - Se lastCheckedAt non esiste o <= 0 -> true
- * - Se lastCheckedAt è più vecchio di 24 ore -> true
- * - Se lastCheckedAt è precedente all'ultimo slot già passato in UTC -> true
- * - Se un tentativo recente è fallito (< 15 min fa) -> false (cooldown per evitare richieste ripetute)
+ * Genera un jitter client deterministico/stabile memorizzato in localStorage
+ * per sfalsare le richieste in una finestra da 0 a JITTER_WINDOW_MS (3 minuti),
+ * impedendo il fenomeno del Thundering Herd tra dispositivi multipli.
+ */
+function getClientJitterMs(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const key = '5lb_accade_oggi_client_jitter';
+    let val = localStorage.getItem(key);
+    if (!val) {
+      val = String(Math.floor(Math.random() * TELEGRAM_CONFIG.JITTER_WINDOW_MS));
+      localStorage.setItem(key, val);
+    }
+    return parseInt(val, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Determina se il feed Telegram necessita di un nuovo controllo di rete:
+ * - Se un tentativo recente è fallito (< 15 min fa) -> false (cooldown per evitare flood in errore)
+ * - Se lastCheckedAt non esiste o <= 0 -> true (primo avvio in assoluto)
+ * - Se l'ultimo controllo è più vecchio di 24 ore -> true (massima stale tollerata)
+ * - Se l'ultimo controllo è avvenuto meno di MIN_CHECK_INTERVAL_MS (30 minuti) fa -> false (rispetta la cache)
+ * - Se è trascorso un nuovo slot orario (es. pubblicazione mattutina 08:10 UTC / serale 19:10 UTC)
+ *   e lastCheckedAt è precedente allo slot (con jitter applicato per prevenire Thundering Herd) -> true
  */
 export function shouldRefreshTelegramFeed(
   lastCheckedAt?: number | null,
@@ -181,9 +204,22 @@ export function shouldRefreshTelegramFeed(
     return true;
   }
 
-  // 4. Se lastCheckedAt è precedente all'ultimo slot già trascorso in UTC
+  // 4. Intervallo minimo di rispetto della cache (30 minuti)
+  if (nowMs - lastCheckedAt < TELEGRAM_CONFIG.MIN_CHECK_INTERVAL_MS) {
+    return false;
+  }
+
+  // 5. Verifica slot UTC con Jitter client anti-Thundering Herd
   const lastPassedSlot = getLastPassedSlotUTC(now);
-  if (lastCheckedAt < lastPassedSlot.getTime()) {
+  const jitterMs = getClientJitterMs();
+  const effectiveSlotTime = lastPassedSlot.getTime() + jitterMs;
+
+  if (nowMs >= effectiveSlotTime && lastCheckedAt < effectiveSlotTime) {
+    return true;
+  }
+
+  // 6. Se sono passati più di 30 minuti dall'ultima verifica, consente l'aggiornamento cadenzato
+  if (nowMs - lastCheckedAt >= TELEGRAM_CONFIG.MIN_CHECK_INTERVAL_MS) {
     return true;
   }
 
@@ -378,6 +414,12 @@ export async function fetchAccadeOggiPosts(options?: {
   const now = new Date();
   const nowMs = now.getTime();
 
+  // Se c'è già una richiesta in corso e non è un refresh manuale forzato,
+  // riutilizza la stessa Promise (deduplicazione in-flight: impedisce chiamate triple all'avvio)
+  if (!options?.forceRefresh && inFlightFetchPromise) {
+    return inFlightFetchPromise;
+  }
+
   // Recupera lastCheckedAt da IndexedDB se non presente in memoria
   if (!inMemoryLastCheckedAt) {
     const meta = await getFeedMeta(ACCADE_OGGI_FEED_KEY);
@@ -391,7 +433,7 @@ export async function fetchAccadeOggiPosts(options?: {
     if (cached.length > 0) {
       return cached;
     }
-    throw new Error('Impossibile contattare la fonte dei dati');
+    throw new Error('Impossibile contattare la fonte dei dati: sei offline');
   }
 
   // Se non occorre aggiornare (cache valida e slot non superato), usa i dati salvati
@@ -407,44 +449,114 @@ export async function fetchAccadeOggiPosts(options?: {
     throw new Error('Impossibile contattare la fonte dei dati');
   }
 
-  const feedUrl = TELEGRAM_CONFIG.FEED_URL;
+  // Avvia il task asincrono con deduplicazione
+  const fetchTask = (async () => {
+    // URL pulito SENZA parametri random/timestamp, così browser e Cloudflare CDN possono riutilizzare la cache HTTP
+    const primaryUrl = options?.forceRefresh
+      ? `${TELEGRAM_CONFIG.FEED_URL}?_force=${nowMs}`
+      : TELEGRAM_CONFIG.FEED_URL;
 
-  try {
-    const res = await fetch(feedUrl, {
-      cache: 'no-cache',
-    });
+    let xml = '';
+    let primaryError: any = null;
 
-    if (!res.ok) {
-      throw new Error(`Stato HTTP non valido: ${res.status}`);
+    // 1. Tentativo primario: Cloudflare Worker diretto con cache browser standard ('default')
+    try {
+      const res = await fetch(primaryUrl, {
+        cache: options?.forceRefresh ? 'reload' : 'default',
+        headers: {
+          Accept: 'application/atom+xml, application/xml, text/xml, */*',
+        },
+      });
+
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.includes('<entry')) {
+          xml = text;
+        }
+      } else {
+        throw new Error(`Stato HTTP Worker non valido: ${res.status}`);
+      }
+    } catch (err: any) {
+      primaryError = err;
+      console.warn('Tentativo primario Cloudflare Worker non riuscito:', err?.message || err);
     }
 
-    const xml = await res.text();
-    const parsed = parseAtomXmlToPosts(xml);
-
-    // Reset cooldown ed aggiornamento di lastCheckedAt (anche se non ci sono nuovi post)
-    inMemoryLastFailedAttempt = 0;
-    inMemoryLastCheckedAt = nowMs;
-
-    if (parsed.length > 0) {
-      saveCachedAccadeOggiPosts(parsed, nowMs);
-      return parsed;
-    } else if (cached.length > 0) {
-      await updateAccadeOggiLastCheckedAt(nowMs);
-      return cached;
-    } else {
-      throw new Error('Nessun elemento nel feed');
+    // 2. Se fallito (ad es. blocco CORS locale o Worker temporaneamente irraggiungibile), prova endpoint proxy o statico
+    if (!xml) {
+      try {
+        const proxyUrl = options?.forceRefresh
+          ? `/api/accade-oggi-feed?_force=${nowMs}`
+          : '/api/accade-oggi-feed';
+        const res = await fetch(proxyUrl, {
+          cache: options?.forceRefresh ? 'reload' : 'default',
+          headers: {
+            Accept: 'application/atom+xml, application/xml, text/xml, */*',
+          },
+        });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.includes('<entry')) {
+            xml = text;
+            primaryError = null;
+          }
+        }
+      } catch {
+        // Fallback statico successivo
+      }
     }
-  } catch (err: any) {
-    // Registra timestamp del fallimento per il cooldown di 15 minuti
+
+    if (!xml) {
+      try {
+        const base = import.meta.env.BASE_URL || '/';
+        const cleanBase = base.endsWith('/') ? base : `${base}/`;
+        const staticUrl = `${cleanBase}telegram.xml`;
+        const res = await fetch(staticUrl, {
+          cache: options?.forceRefresh ? 'reload' : 'default',
+        });
+        if (res.ok) {
+          const text = await res.text();
+          if (text && text.includes('<entry')) {
+            xml = text;
+            primaryError = null;
+          }
+        }
+      } catch {
+        // Nessun altro fallback disponibile
+      }
+    }
+
+    if (xml) {
+      const parsed = parseAtomXmlToPosts(xml);
+
+      // Reset cooldown ed aggiornamento di lastCheckedAt
+      inMemoryLastFailedAttempt = 0;
+      inMemoryLastCheckedAt = nowMs;
+
+      if (parsed.length > 0) {
+        saveCachedAccadeOggiPosts(parsed, nowMs);
+        return parsed;
+      } else if (cached.length > 0) {
+        await updateAccadeOggiLastCheckedAt(nowMs);
+        return cached;
+      }
+    }
+
+    // Registra timestamp del fallimento per il cooldown
     inMemoryLastFailedAttempt = nowMs;
-    // IMPORTANTE: NON aggiorniamo lastCheckedAt, così riproverà alla prossima apertura / focus
-
-    console.warn('Errore download feed Telegram dal Worker:', err);
+    console.warn('Errore finale download feed Telegram:', primaryError);
 
     if (cached.length > 0) {
       throw new UpdateFailedWithCacheError('Aggiornamento non riuscito, contenuti salvati', cached);
     }
 
     throw new Error('Impossibile contattare la fonte dei dati');
+  })();
+
+  inFlightFetchPromise = fetchTask;
+
+  try {
+    return await fetchTask;
+  } finally {
+    inFlightFetchPromise = null;
   }
 }

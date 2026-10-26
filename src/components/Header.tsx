@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Bell, Sparkles, Search, X } from 'lucide-react';
+import { Menu, Bell, Sparkles, Search, X, RotateCw } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { Logo5LB } from './Logo5LB';
 
@@ -12,6 +12,8 @@ interface HeaderProps {
   onSearchChange: (q: string) => void;
   currentFilterLabel?: string;
   searchPlaceholder?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -23,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   onSearchChange,
   currentFilterLabel,
   searchPlaceholder = 'Cerca in questa categoria...',
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const [showSearchInput, setShowSearchInput] = React.useState(false);
 
@@ -93,6 +97,19 @@ export const Header: React.FC<HeaderProps> = ({
             <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 group-hover:rotate-12 transition-transform shrink-0" />
             <span className="font-semibold tracking-wide">Chiedi</span>
           </button>
+
+          {/* Refresh / Sincronizza button */}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-2 rounded-xl text-slate-200 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer disabled:opacity-60"
+              title={isRefreshing ? 'Aggiornamento in corso...' : 'Aggiorna contenuti'}
+              aria-label="Aggiorna contenuti"
+            >
+              <RotateCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-orange-400' : ''}`} />
+            </button>
+          )}
 
           {/* Notification Bell */}
           <button

@@ -21,11 +21,9 @@ const BRIDGES = [
 
 /**
  * Origini autorizzate per le richieste CORS da browser.
+ * Include '*' per permettere la lettura a PWA da qualunque dominio o host locale/preview.
  */
-const ALLOWED_ORIGINS = [
-  'https://app.5lb.eu',
-  'https://mauroits.github.io',
-];
+const ALLOW_ALL_ORIGINS = true;
 
 /**
  * Chiave usata nel binding KV (env.TELEGRAM_KV) per memorizzare il feed.
@@ -154,16 +152,13 @@ async function readFeedFromKV(env) {
  */
 function getCorsHeaders(request) {
   const origin = request.headers.get('Origin');
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
-    return {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Max-Age': '86400',
-      Vary: 'Origin',
-    };
-  }
-  return {};
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Cache-Control, If-Modified-Since, If-None-Match',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
 }
 
 // ============================================================================
@@ -234,10 +229,10 @@ export default {
       }
     }
 
-    // Risposta con il feed Atom XML valido
+    // Risposta con il feed Atom XML valido (5 min max-age con revalidation)
     const responseHeaders = {
       'Content-Type': 'application/atom+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600',
+      'Cache-Control': 'public, max-age=1800, s-maxage=1800, stale-while-revalidate=3600',
       ...corsHeaders,
     };
 

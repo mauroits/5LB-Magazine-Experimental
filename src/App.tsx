@@ -382,16 +382,16 @@ export default function App() {
     // Inizializza archivio badge da IndexedDB
     initBadgesStorage().catch(() => {});
 
-    // Inizializza feed Accade Oggi da IndexedDB
-    initAccadeOggiStorage().then(({ posts: aoPosts }) => {
+    // Inizializza feed Accade Oggi da IndexedDB (visualizzazione istantanea 0ms da cache)
+    initAccadeOggiStorage().then(({ posts: aoPosts, lastCheckedAt }) => {
       if (aoPosts.length > 0) {
         setAccadeOggiPosts(aoPosts);
         setIsAccadeOggiLoading(false);
       }
-      // Verifica all'apertura in base agli slot UTC / 24 ore
+      // Verifica in background nel rispetto della finestra minima (30 min) e deduplicazione
       loadAccadeOggiFeed(false);
     }).catch(() => {
-      loadAccadeOggiFeed(false);
+      loadAccadeOggiFeed(true);
     });
 
     // Inizializza feed principale e articoli da IndexedDB (stale-while-revalidate: circa 6 ore)
@@ -409,13 +409,13 @@ export default function App() {
       loadFeed(false);
     });
 
-    // 2) Controllo all'apertura e al ritorno in primo piano (focus / visibilitychange)
+    // 2) Controllo al ritorno in primo piano (focus / visibilitychange)
     const handleForeground = () => {
       if (document.visibilityState === 'visible') {
         // Controllo aggiornamenti PWA / Service Worker (massimo 1 volta ogni 24 ore)
         checkPwaUpdateOnForeground().catch(() => {});
 
-        // Verifica Accade Oggi con logica degli slot UTC e cooldown 15 minuti
+        // Verifica Accade Oggi con logica di intervallo minimo 30 min, slot UTC e jitter anti-Thundering Herd
         loadAccadeOggiFeed(false);
 
         // Verifica feed principale con intervallo 6 ore
@@ -429,8 +429,8 @@ export default function App() {
     document.addEventListener('visibilitychange', handleForeground);
     window.addEventListener('focus', handleForeground);
 
-    // 3) Se l'app resta aperta a lungo: ricontrolla ogni minuto
-    const interval = setInterval(handleForeground, 60000);
+    // 3) Se l'app resta aperta a lungo: ricontrolla a intervalli regolari (ogni 30 minuti)
+    const interval = setInterval(handleForeground, 30 * 60 * 1000);
 
     return () => {
       clearInterval(interval);
@@ -843,6 +843,20 @@ export default function App() {
         });
     }
   }, [activeFilter, loadAccadeOggiFeed, loadFeed, showDiscreetNotice]);
+
+  // Aggiornamento manuale forzato (pulsante "Aggiorna" in Header o browser)
+  const handleManualRefresh = useCallback(() => {
+    if (activeFilter.type === 'quick' && activeFilter.id === 'today') {
+      loadAccadeOggiFeed(true);
+    } else if (activeFilter.type === 'quick' && activeFilter.id === 'all') {
+      loadFeed(true);
+    } else if (activeFilter.type === 'rss' && activeFilter.category) {
+      handleRetrySection();
+    } else {
+      loadAccadeOggiFeed(true);
+      loadFeed(true);
+    }
+  }, [activeFilter, loadAccadeOggiFeed, loadFeed, handleRetrySection]);
 
   // Filter Title label & search placeholder
   const isAllArchive = activeFilter.type === 'quick' && activeFilter.id === 'all';
@@ -1381,6 +1395,8 @@ export default function App() {
           onSearchChange={setSearchQuery}
           currentFilterLabel={filterTitle}
           searchPlaceholder={searchPlaceholder}
+          onRefresh={handleManualRefresh}
+          isRefreshing={isRefreshing}
         />
 
         {/* Article Feed Area */}

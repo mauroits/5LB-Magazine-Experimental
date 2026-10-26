@@ -1,6 +1,6 @@
 {
-  "summary": "Piano per la gestione dello sblocco notifiche su Android PWA tramite chiamata di sistema, ripristino automatico al focus e guida contestuale per autorizzazioni revocate.",
-  "updatedAt": "2026-10-14T09:21:13.631386Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Piano di ottimizzazione architetturale per il feed \"Accade Oggi\": risoluzione inefficienze di rete, prevenzione Thundering Herd tramite HTTP Cache e Jitter, deduplicazione chiamate concorrenti e mantenimento delle notifiche push native dell'app.",
+  "updatedAt":  "2026-10-26T20:57:50.979157928Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

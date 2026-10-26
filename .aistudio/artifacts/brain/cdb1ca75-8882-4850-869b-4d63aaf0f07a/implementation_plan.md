@@ -1,80 +1,95 @@
-# Gestione Sblocco Notifiche su Android PWA
+# Piano Architetturale: Ottimizzazione Feed "Accade Oggi" & Notifiche
 
-Questo piano definisce l'architettura e l'esperienza utente per gestire lo sblocco delle notifiche su Android quando l'app è installata sulla schermata Home (PWA), garantendo l'invio della chiamata diretta al sistema operativo e la corretta gestione del blocco imposto dai browser Chromium.
-
-## Decisioni Utente & Vincoli di Sistema
-
-> [!IMPORTANT]
-> **Vincolo tecnico del sistema operativo Android e dei browser Chromium**:
-> Nelle specifiche W3C Push API e in Android/Chrome, una volta che l'utente revoca o disattiva le notifiche per un'origine o un'app installata, il browser imposta permanentemente `Notification.permission = 'denied'`. Da quel momento in poi, qualsiasi chiamata a `Notification.requestPermission()` viene **automaticamente rifiutata dal motore Chromium in pochi millisecondi senza mostrare la finestra di dialogo nativa**.
-
-- **Chiamata diretta al sistema**: Al click sul pulsante "Sblocca", l'app esegue sempre e comunque la chiamata diretta al sistema (`Notification.requestPermission()` e tentativo di riallineamento push manager).
-- **Riconoscimento immediato del blocco Chromium**: Se la chiamata al sistema viene silenziata automaticamente dal sistema Android (risoluzione immediata a `'denied'`), l'app spiega con trasparenza che Android richiede un singolo tocco nelle impostazioni dell'app.
-- **Rilevamento automatico al rientro in app (`visibilitychange` / `window.focus`)**: Appena l'utente riattiva le notifiche nelle impostazioni di Android e torna all'app, la PWA rileva automaticamente il cambiamento senza bisogno di riavviare l'app, aggiorna lo stato su "Attive" e mostra la notifica di conferma.
+Questo piano risponde all'analisi dei log di Cloudflare, risolve le inefficienze di rete (chiamate triple e polling frequente), previene il fenomeno del **Thundering Herd** paventato dall'utente e garantisce il corretto funzionamento delle **notifiche push dell'app**.
 
 ---
 
-### 1. Panoramica & Funzionamento
+## 1. Analisi del Problema & Considerazioni dell'Utente
 
-1. **Tentativo di chiamata al sistema**:
-   - L'utente tocca "Sblocca".
-   - L'app invoca la chiamata nativa al sistema operativo.
-   - Se il sistema apre la finestra di autorizzazione e l'utente conferma, lo stato diventa istantaneamente **"Attive"** (verde).
-2. **Gestione del rifiuto automatico di Android**:
-   - Se il sistema Android non mostra la finestra (perché Chrome/Android vieta alle web app di richiedere permessi già revocati), l'interfaccia evidenzia chiaramente:
-     *"Il sistema operativo Android impedisce alle app web di mostrare nuovamente il popup dopo una revoca. Per ripristinare le notifiche, tieni premuta l'icona dell'app sulla Home > Info app (ℹ️) > Notifiche > Consenti."*
-3. **Ascolto dinamico in tempo reale**:
-   - Aggiunta di listener per `visibilitychange` e `window.addEventListener('focus')`.
-   - Non appena l'utente torna nell'app dopo aver attivato la spunta in Android, la PWA si aggiorna all'istante senza ricaricare la pagina.
+### Perché Cloudflare ha registrato 21 chiamate in 40 minuti?
+1. **Triple Fetch all'avvio / focus**: all'avvio dell'app venivano invocati contemporaneamente `initAccadeOggiStorage()` e l'evento `window.addEventListener('focus')`. Senza un blocco sulle richieste concorrenti (*in-flight promise deduplication*), il browser inviava fino a 3 richieste GET identiche a distanza di 100 millisecondi l'una dall'altra (come confermato dai timestamp del log: `20:28:43.850`, `20:28:43.996`, `20:28:44.135`).
+2. **Bypass forzato della cache (`cache: 'no-cache'`)**: nel file `src/services/accadeOggiFeed.ts`, la chiamata `fetch(feedUrl, { cache: 'no-cache' })` ordinava al browser di ignorare l'intestazione HTTP `Cache-Control: public, max-age=3600` inviata dal Cloudflare Worker, contattando ogni volta i server di Cloudflare.
+3. **Polling ogni 60 secondi in primo piano**: in `src/App.tsx` era attivo un `setInterval` a 60 secondi che ricontrollava il feed ad ogni minuto e ad ogni cambio scheda.
+
+### Il rischio "Thundering Herd" (Tempesta di richieste a orari fissi)
+L'osservazione dell'utente è **estremamente acuta e corretta**:
+> Se si imposta una regola rigida tipo *"scarica esattamente alle 09:05:00"*, quando centinaia o migliaia di utenti hanno l'app aperta o la aprono nello stesso momento, tutti i dispositivi invierebbero una richiesta al server nello stesso identico secondo (*Thundering Herd*).
 
 ---
 
-### 2. Esperienza Utente & Design
+## 2. La Soluzione Ottimale: CDN Edge Cache + Client Jitter + Cooldown
 
-- **Pulsante "Sblocca"**:
-  - Mostra uno stato visivo di caricamento/attesa durante la chiamata al sistema (`Richiesta al sistema in corso...`).
-  - Esegue la chiamata nativa.
-- **Pannello di supporto specifico per Android PWA**:
-  - Compare solo se la chiamata al sistema viene soppressa da Android.
-  - Presenta i passaggi dedicati per app installata su Android (icona Home > Info app > Notifiche).
-  - Include un pulsante rapido per riprovare la chiamata al sistema.
-- **Transizione automatica di successo**:
-  - Appena la permission passa a `granted` (anche in background mentre l'utente era nelle impostazioni del telefono), il badge passa automaticamente a verde "Attive" con animazione a impulsi e invia una notifica di conferma.
-
----
-
-### 3. Architettura Tecnica
+Per garantire le notifiche tempestive senza sovraccaricare il Worker né rischiare il Thundering Herd, si adotta l'architettura standard per feed asincroni:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│               NotificationCenterModal                   │
-│                                                         │
-│  [Pulsante "Sblocca"] ───► requestPushPermission()       │
-│                                     │                   │
-│                                     ▼                   │
-│                           Notification.requestPermission│
-│                                     │                   │
-│                  ┌──────────────────┴─────────────────┐ │
-│                  ▼                                    ▼ │
-│              granted                               denied
-│         (Mostra "Attive")             (Rileva soppressione)
-│                                               │         │
-│                                               ▼         │
-│                                       Pannello Android  │
-│                                       Schermata Home    │
-│                                                         │
-│  [window.focus / visibilitychange] ──► refreshList()    │
-│                                               │         │
-│                                               ▼         │
-│                                     Aggiornamento auto  │
-└─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                      Client PWA                        │
+│                                                        │
+│  [Avvio / Focus / Timer 30 min]                        │
+│                 │                                      │
+│                 ▼                                      │
+│  Cooldown check: Sono passati >= 30 min?               │
+│  ├── NO  ──► Usa dati locali IndexedDB (0 chiamate)   │
+│  └── SÌ  ──► Deduplicazione Promise (max 1 chiamata)   │
+│                 │                                      │
+│                 ▼ fetch(url, { cache: 'default' })     │
+└─────────────────┬──────────────────────────────────────┘
+                  │
+                  ▼
+┌────────────────────────────────────────────────────────┐
+│                Cloudflare Edge Cache                   │
+│                                                        │
+│  Il primo utente risveglia la CDN.                     │
+│  Cloudflare tiene in memoria edge per 30-60 min.       │
+│  Tutti i successivi 999 utenti ricevono la risposta   │
+│  istantanea dalla cache edge (0 esecuzioni Worker KV). │
+└────────────────────────────────────────────────────────┘
 ```
 
-1. **`src/services/notificationService.ts`**:
-   - Rafforzare `requestPushPermission()` per gestire sia `Notification.requestPermission()` promise-based che callback-based per compatibilità massima Android.
-   - Esportare una funzione per controllare il supporto nativo e l'ambiente standalone/PWA.
+### I tre pilastri della soluzione:
+1. **Riuso della Cache HTTP del Browser (`cache: 'default'`)**:
+   - Rimuovere `cache: 'no-cache'`.
+   - Il browser dell'utente rispetta l'header `Cache-Control: public, max-age=1800` (o `3600`), riutilizzando la copia locale senza toccare la rete se la risposta è ancora valida.
+2. **Deduplicazione in-flight delle richieste concorrenti**:
+   - Se `fetchAccadeOggiPosts()` viene chiamata contemporaneamente (es. all'avvio da `init` e da `focus`), la seconda chiamata riutilizza la stessa Promise già in volo invece di aprire una seconda connessione di rete.
+3. **Controllo a intervallo cadenzato (30 minuti) con Jitter**:
+   - Sostituire il polling ogni 60 secondi con un controllo ogni **30 minuti** (o al ritorno in primo piano se sono passati almeno 30 minuti).
+   - Inserire una variazione casuale (*jitter*) di ±2 minuti per evitare che più client sincronizzati interroghino il server nello stesso istante.
+   - Forzare l'aggiornamento immediato di rete solo se l'utente compie un'azione esplicita (click sul pulsante "Riprova" o pull-to-refresh).
 
-2. **`src/components/NotificationCenterModal.tsx`**:
-   - Integrare listener `visibilitychange` e `focus` per sincronizzazione immediata non appena l'utente torna all'app.
-   - Visualizzare l'indicatore di chiamata al sistema in corso.
-   - Fornire la spiegazione precisa del vincolo Android per app installata su Home screen.
+---
+
+## 3. Gestione Notifiche dell'App
+
+- **Rilevamento nuovi post (`checkForNewAccadeOggiAndNotify`)**:
+  - Quando una fetch (periodica o alla riapertura) rileva un post con data successiva a `ACCADE_OGGI_LAST_SEEN_KEY`, attiva:
+    1. Notifica Push nativa di sistema del browser/sistema operativo (Android, Windows, macOS, iOS).
+    2. Segnale acustico armonico (*chime* Web Audio API).
+    3. Notifica Toast in-app con collegamento diretto per aprire il post.
+- **Service Worker & Periodic Background Sync**:
+  - Mantenere attivo il listener del Service Worker per la gestione dei click e della sincronizzazione in background su Android.
+
+---
+
+## 4. Modifiche ai File
+
+1. **`src/services/accadeOggiFeed.ts`**:
+   - Aggiungere `inFlightFetchPromise: Promise<BloggerPost[]> | null` per deduplicare chiamate parallele.
+   - Sostituire `cache: 'no-cache'` con `cache: 'default'`.
+   - Riformulare `shouldRefreshTelegramFeed` impostando una finestra minima di rispetto della cache (30 minuti) e jitter per prevenire il Thundering Herd.
+2. **`src/config/telegramConfig.ts`**:
+   - Definire `MIN_CHECK_INTERVAL_MS = 30 * 60 * 1000` (30 minuti).
+   - Configurare il jitter massimo (es. 2-5 minuti).
+3. **`src/App.tsx`**:
+   - Rimuovere il `setInterval` a 60 secondi in favore di un timer a 30 minuti.
+   - Prevenire chiamate ridondanti all'avvio tra `initAccadeOggiStorage` e `handleForeground`.
+4. **`worker/index.js`**:
+   - Mantenere l'ottima intestazione `Cache-Control: public, max-age=1800` (30 minuti di edge cache su Cloudflare), che azzera il carico verso i bridge RSS e protegge da qualsiasi picco di traffico.
+
+---
+
+## 5. Verifica e Collaudo
+
+- **Verifica TypeScript & Build**: Esecuzione di `compile_applet` per verificare che non vi siano regressioni.
+- **Test di deduplicazione**: Verificare che chiamate multiple a `fetchAccadeOggiPosts()` generino una sola richiesta HTTP.
+- **Test di ricezione e notifica**: Verificare che l'arrivo di un nuovo post generi la notifica di sistema e il suono.

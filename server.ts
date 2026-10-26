@@ -840,7 +840,7 @@ app.get('/api/telegram-view', async (req, res) => {
   }
 });
 
-// 6. Accade Oggi RSS (Atom) proxy endpoint with local telegram.xml as primary source
+// 6. Accade Oggi RSS (Atom) proxy endpoint (Cloudflare Worker primary, local telegram.xml fallback)
 app.get('/api/accade-oggi-feed', async (req, res) => {
   const cacheKey = 'accade-oggi-feed';
   const cached = cacheStore.get(cacheKey);
@@ -851,7 +851,62 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
     return sendCachedResponse(req, res, cached, 'HIT');
   }
 
-  // 1. Try static relative file (public/telegram.xml) first
+  // 1. Prova prima il Cloudflare Worker principale per avere sempre i post più recenti
+  try {
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+      Accept: 'application/atom+xml, application/xml, text/xml, */*',
+    };
+    if (cached?.lastModified) {
+      fetchHeaders['If-Modified-Since'] = cached.lastModified;
+    }
+    if (cached?.etag) {
+      fetchHeaders['If-None-Match'] = cached.etag;
+    }
+
+    const workerUrl = 'https://telegram-feed.5lb-framework.workers.dev/telegram.xml';
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const workerRes = await fetch(workerUrl, {
+      headers: fetchHeaders,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (workerRes.status === 304 && cached) {
+      cacheStore.renew(cacheKey, ttlMs);
+      return sendCachedResponse(req, res, cached, 'HIT-REVALIDATED');
+    }
+
+    if (workerRes.ok) {
+      const xml = await workerRes.text();
+      if (xml && xml.includes('<entry')) {
+        const etag = workerRes.headers.get('etag') || computeETag(xml);
+        const lastModified = workerRes.headers.get('last-modified') || new Date().toUTCString();
+
+        const newEntry = cacheStore.set(cacheKey, {
+          body: xml,
+          contentType: 'application/atom+xml; charset=utf-8',
+          etag,
+          lastModified,
+          ttlMs,
+        });
+
+        // Aggiorna anche il file locale public/telegram.xml in background per sincronizzazione offline
+        try {
+          const staticXmlPath = path.resolve(__dirname, 'public', 'telegram.xml');
+          fs.writeFileSync(staticXmlPath, xml, 'utf-8');
+        } catch {}
+
+        return sendCachedResponse(req, res, newEntry, 'MISS');
+      }
+    }
+  } catch (workerErr) {
+    console.warn('Could not fetch telegram feed from Cloudflare Worker, trying fallback:', workerErr);
+  }
+
+  // 2. Fallback: file statico locale public/telegram.xml
   try {
     const staticXmlPath = path.resolve(__dirname, 'public', 'telegram.xml');
     if (fs.existsSync(staticXmlPath)) {
@@ -879,7 +934,7 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
     console.warn('Could not read static telegram.xml:', fsErr);
   }
 
-  // 2. If cached is present, return it as fallback
+  // 3. If cached is present, return it as fallback
   if (cached) {
     return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
   }

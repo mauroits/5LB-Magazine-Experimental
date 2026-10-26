@@ -65,7 +65,6 @@ export default defineConfig(() => {
           'logo-faviconBLU.png',
           'logoBLU_APP.jpg',
           'sw-sync.js',
-          'telegram.xml',
         ],
         manifest: {
           id: base,
@@ -111,17 +110,20 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,xml}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['**/telegram.xml'],
           importScripts: [`${base}sw-sync.js`],
           runtimeCaching: [
             {
-              urlPattern: /.*telegram\.xml.*/i,
-              handler: 'StaleWhileRevalidate',
+              // Feed dinamico Telegram Accade Oggi: NetworkFirst con fallback cache solo offline
+              urlPattern: /.*telegram.*\.xml.*/i,
+              handler: 'NetworkFirst',
               options: {
-                cacheName: '5lb-telegram-xml',
+                cacheName: '5lb-telegram-feed-v2',
+                networkTimeoutSeconds: 4,
                 expiration: {
-                  maxEntries: 5,
-                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],
