@@ -1,12 +1,20 @@
 /**
- * Utility per la validazione e normalizzazione sicura degli URL provenienti da feed esterni.
+ * Utility per la validazione e sanitizzazione sicura degli URL.
+ * Accetta rigorosamente solo protocolli sicuri http: e https:
+ * scartando qualsiasi schema pericoloso (javascript:, data:, vbscript:, file:, blob:, ecc.).
  */
 
 /**
- * Restituisce la stringa URL normalizzata solo se, dopo trim e new URL(),
- * il protocollo è rigorosamente 'https:' (gestendo anche gli URL protocol-relative "//host" come https).
+ * Verifica se una stringa è un URL sicuro con protocollo http: o https:.
+ */
+export function isSafeUrl(url: string | null | undefined): boolean {
+  return toHttpOrHttpsUrl(url) !== null;
+}
+
+/**
+ * Restituisce l'URL normalizzato solo se il protocollo è rigorosamente 'https:'
+ * (gestisce anche URL protocol-relative "//host" trasformandoli in https://).
  * In caso contrario, restituisce null.
- * Rifiuta schemi javascript:, data:, vbscript:, intent:, file:, http: e qualsiasi altro schema.
  */
 export function toHttpsUrl(url: string | null | undefined): string | null {
   if (!url || typeof url !== 'string') return null;
@@ -29,9 +37,9 @@ export function toHttpsUrl(url: string | null | undefined): string | null {
 }
 
 /**
- * Come toHttpsUrl, ma accetta sia 'http:' sia 'https:'.
- * Rifiuta javascript:, data:, vbscript:, intent:, file: e qualsiasi altro schema non-HTTP/HTTPS,
- * indipendentemente da maiuscole/minuscole o spazi/caratteri di controllo iniziali.
+ * Valida un URL accettando rigorosamente solo schemi 'http:' o 'https:'.
+ * Rifiuta javascript:, data:, vbscript:, file:, blob:, intent: o caratteri di controllo.
+ * Restituisce la stringa dell'URL normalizzata o null se non sicuro.
  */
 export function toHttpOrHttpsUrl(url: string | null | undefined): string | null {
   if (!url || typeof url !== 'string') return null;
@@ -51,4 +59,16 @@ export function toHttpOrHttpsUrl(url: string | null | undefined): string | null 
   } catch {
     return null;
   }
+}
+
+/**
+ * Sanitizza un link ad un articolo proveniente da feed Blogger o sorgenti esterne.
+ * Se l'URL non è valido o usa protocolli non ammessi, restituisce il fallback sicuro fornito.
+ */
+export function sanitizeArticleLink(
+  url: string | null | undefined,
+  fallback = 'https://magazine.5lb.eu'
+): string {
+  const safe = toHttpOrHttpsUrl(url);
+  return safe || fallback;
 }

@@ -84,6 +84,11 @@ import { openNotebookWithPriority } from './utils/notebookLauncher';
 import { useTheme } from './hooks/useTheme';
 import { useInterfaceZoom } from './hooks/useInterfaceZoom';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import {
+  initPwaUpdate,
+  applyPwaUpdate,
+  checkPwaUpdateOnForeground,
+} from './services/pwaUpdateService';
 import { Bell, ArrowRight, X } from 'lucide-react';
 
 interface CategoryFeedState {
@@ -149,6 +154,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchingOnline, setIsSearchingOnline] = useState(false);
   const [onlineSearchResults, setOnlineSearchResults] = useState<Record<string, BloggerPost[]>>({});
+  const activeSearchReqIdRef = useRef<number>(0);
+
+  // PWA update prompt state ("Nuova versione disponibile")
+  const [isPwaUpdateAvailable, setIsPwaUpdateAvailable] = useState(false);
 
   // Home view on open is now the Accade Oggi feed
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>({
@@ -362,8 +371,13 @@ export default function App() {
     // Listener messaggi Service Worker per navigazione diretta ad articolo su click notifica
     const cleanupSWListener = initSWMessageListener();
 
-    // Registra Periodic Background Sync del Service Worker (12 ore, configurabile in syncConfig.ts)
-    registerPeriodicSync().catch(() => {});
+    // Listener aggiornamenti PWA (prompt "Nuova versione disponibile")
+    const cleanupPwaListener = initPwaUpdate(() => {
+      setIsPwaUpdateAvailable(true);
+    });
+
+    // Controllo aggiornamenti PWA all'avvio con limite 24 ore
+    checkPwaUpdateOnForeground().catch(() => {});
 
     // Inizializza archivio badge da IndexedDB
     initBadgesStorage().catch(() => {});
@@ -398,6 +412,9 @@ export default function App() {
     // 2) Controllo all'apertura e al ritorno in primo piano (focus / visibilitychange)
     const handleForeground = () => {
       if (document.visibilityState === 'visible') {
+        // Controllo aggiornamenti PWA / Service Worker (massimo 1 volta ogni 24 ore)
+        checkPwaUpdateOnForeground().catch(() => {});
+
         // Verifica Accade Oggi con logica degli slot UTC e cooldown 15 minuti
         loadAccadeOggiFeed(false);
 
@@ -420,6 +437,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleForeground);
       window.removeEventListener('focus', handleForeground);
       cleanupSWListener();
+      cleanupPwaListener();
     };
   }, [loadFeed, loadAccadeOggiFeed]);
 
@@ -1083,14 +1101,89 @@ export default function App() {
     openExternalBrowser('https://t.me/s/magazine5LB');
   };
 
-  // Online archive search handler: calls Blogger API and imports found articles into local state
+  // 1) Debounce di 500ms per ricerca remota online (solo se query >= 3 caratteri)
+  // Il filtro locale sui post già presenti in cache resta 100% istantaneo in useMemo
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 3) {
+      return;
+    }
+
+    if (onlineSearchResults[trimmed.toLowerCase()]) {
+      return;
+    }
+
+    const reqId = ++activeSearchReqIdRef.current;
+    const timer = setTimeout(async () => {
+      setIsSearchingOnline(true);
+      try {
+        const res = await searchBloggerArchive(trimmed, 30);
+        // Scarta la risposta se nel frattempo è partita una ricerca più recente (race conditions)
+        if (reqId !== activeSearchReqIdRef.current || res.isStale) {
+          return;
+        }
+
+        if (res.posts.length > 0) {
+          setOnlineSearchResults((prev) => ({
+            ...prev,
+            [trimmed.toLowerCase()]: res.posts,
+          }));
+
+          setPosts((prev) => {
+            const map = new Map<string, BloggerPost>();
+            for (const p of prev) map.set(p.id, p);
+            for (const p of res.posts) {
+              const existing = map.get(p.id);
+              map.set(
+                p.id,
+                existing ? { ...p, isRead: existing.isRead, isFavorite: existing.isFavorite } : p
+              );
+            }
+            const merged = Array.from(map.values());
+            merged.sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
+            saveArticlesToDB(merged).catch(() => {});
+            return merged;
+          });
+        }
+      } catch (err) {
+        if (reqId === activeSearchReqIdRef.current) {
+          console.warn('Errore ricerca remota archivio (debounced):', err);
+        }
+      } finally {
+        if (reqId === activeSearchReqIdRef.current) {
+          setIsSearchingOnline(false);
+        }
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, onlineSearchResults]);
+
+  // Online archive search handler manuale (es. click pulsante "Cerca altri risultati online")
   const handleSearchOnline = useCallback(async (query: string) => {
     const trimmed = query.trim();
-    if (!trimmed || isSearchingOnline) return;
+    if (trimmed.length < 3) {
+      setToastNotification({
+        id: 'search-min-chars-' + Date.now(),
+        title: 'Ricerca archivio online',
+        body: 'La ricerca remota richiede almeno 3 caratteri.',
+        date: new Date().toISOString(),
+        read: false,
+      });
+      return;
+    }
+    if (isSearchingOnline) return;
+
+    const reqId = ++activeSearchReqIdRef.current;
     setIsSearchingOnline(true);
     trackEvent('search', { search_term: trimmed });
     try {
       const res = await searchBloggerArchive(trimmed, 30);
+      // Se una risposta JSONP arriva dopo che è già partita una ricerca più recente, scartala
+      if (reqId !== activeSearchReqIdRef.current || res.isStale) {
+        return;
+      }
+
       if (res.posts.length > 0) {
         // Save in online search results map for instant view access
         setOnlineSearchResults((prev) => ({
@@ -1134,16 +1227,20 @@ export default function App() {
         });
       }
     } catch (err) {
-      console.warn('Errore durante la ricerca online:', err);
-      setToastNotification({
-        id: 'search-error-' + Date.now(),
-        title: 'Ricerca online non riuscita',
-        body: `Impossibile completare la ricerca per "${trimmed}". Riprova più tardi.`,
-        date: new Date().toISOString(),
-        read: false,
-      });
+      if (reqId === activeSearchReqIdRef.current) {
+        console.warn('Errore durante la ricerca online:', err);
+        setToastNotification({
+          id: 'search-error-' + Date.now(),
+          title: 'Ricerca online non riuscita',
+          body: `Impossibile completare la ricerca per "${trimmed}". Riprova più tardi.`,
+          date: new Date().toISOString(),
+          read: false,
+        });
+      }
     } finally {
-      setIsSearchingOnline(false);
+      if (reqId === activeSearchReqIdRef.current) {
+        setIsSearchingOnline(false);
+      }
     }
   }, [isSearchingOnline]);
 
@@ -1447,6 +1544,36 @@ export default function App() {
         }}
       />
 
+
+      {/* Banner non invasivo aggiornamento PWA */}
+      {isPwaUpdateAvailable && (
+        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-50 animate-in slide-in-from-bottom-3 duration-300 pointer-events-auto">
+          <div className="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-[#000836]/95 text-white backdrop-blur-md shadow-2xl border border-sky-500/40">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+              <span className="text-xs sm:text-sm font-semibold text-slate-100 truncate">
+                Nuova versione disponibile
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => applyPwaUpdate()}
+                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-95 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+              >
+                Aggiorna
+              </button>
+              <button
+                onClick={() => setIsPwaUpdateAvailable(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
+                aria-label="Chiudi avviso"
+                title="Chiudi avviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PWA Offline indicator */}
       <OfflineIndicator />

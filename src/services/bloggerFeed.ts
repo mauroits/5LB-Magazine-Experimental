@@ -12,6 +12,7 @@ import {
   getAppStateItem,
   setAppStateItem,
 } from '../utils/idbStorage';
+import { sanitizeArticleLink } from '../utils/safeUrl';
 
 // Minimum interval between automatic background fetches from Blogger (configured in syncConfig.ts: 6 hours)
 export const FEED_CACHE_TTL_MS = FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
@@ -234,7 +235,7 @@ export function parseBloggerEntry(
   if (Array.isArray(entry.link)) {
     const altLink = entry.link.find((l: any) => l.rel === 'alternate' && l.type === 'text/html');
     if (altLink && altLink.href) {
-      link = altLink.href;
+      link = sanitizeArticleLink(altLink.href);
     }
   }
 
@@ -490,16 +491,34 @@ export async function fetchBloggerPosts(options?: {
   };
 }
 
-// Search the entire online Blogger archive by query
+let activeSearchRequestId = 0;
+
+export interface SearchBloggerArchiveResult extends FetchBloggerPostsResult {
+  requestId: number;
+  isStale: boolean;
+}
+
+// Search the entire online Blogger archive by query con tracciamento sequenziale requestId contro race conditions
 export async function searchBloggerArchive(
   query: string,
   maxResults = 30
-): Promise<FetchBloggerPostsResult> {
-  return fetchBloggerPosts({
+): Promise<SearchBloggerArchiveResult> {
+  const reqId = ++activeSearchRequestId;
+  const result = await fetchBloggerPosts({
     q: query.trim(),
     maxResults,
     startIndex: 1,
   });
+
+  return {
+    ...result,
+    requestId: reqId,
+    isStale: reqId < activeSearchRequestId,
+  };
+}
+
+export function getActiveSearchRequestId(): number {
+  return activeSearchRequestId;
 }
 
 function applyFilter(posts: BloggerPost[], category?: string): BloggerPost[] {

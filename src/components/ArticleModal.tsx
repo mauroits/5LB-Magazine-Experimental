@@ -29,7 +29,7 @@ import { BloggerPost } from '../types';
 import { formatItalianDate, isMagazineUrl } from '../services/bloggerFeed';
 import { highlightHtmlContent } from '../utils/searchUtils';
 import { sanitizeArticleHtml } from '../utils/sanitizeHtml';
-import { toHttpsUrl } from '../utils/safeUrl';
+import { toHttpsUrl, toHttpOrHttpsUrl } from '../utils/safeUrl';
 import { trackEvent } from '../services/analytics';
 import { openExternalBrowser } from '../utils/browserLauncher';
 
@@ -400,9 +400,9 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
     }
   }, [activeIndex, isSearchOpen, totalMatches, searchWord]);
 
-  // Safe HTTPS URL for original post link
+  // Safe HTTP/HTTPS URL for original post link
   const safePostLink = useMemo(() => {
-    return toHttpsUrl(post?.link);
+    return toHttpOrHttpsUrl(post?.link);
   }, [post?.link]);
 
   if (!post) return null;
@@ -857,19 +857,24 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
             onClick={(e) => {
               const target = (e.target as HTMLElement).closest('a');
               if (target) {
-                const href = target.getAttribute('href');
-                if (href && !href.startsWith('#')) {
+                const rawHref = target.getAttribute('href');
+                if (rawHref && !rawHref.startsWith('#')) {
                   e.preventDefault();
+                  const safeHref = toHttpOrHttpsUrl(rawHref);
+                  if (!safeHref) {
+                    console.warn('Scartato link con protocollo non sicuro:', rawHref);
+                    return;
+                  }
                   trackEvent('article_link_click', {
-                    link_url: href,
+                    link_url: safeHref,
                     link_text: target.innerText?.trim() || '',
                     article_title: post.title,
                     article_id: post.id,
                   });
-                  if (onInterceptLink && isMagazineUrl(href)) {
-                    onInterceptLink(href);
+                  if (onInterceptLink && isMagazineUrl(safeHref)) {
+                    onInterceptLink(safeHref);
                   } else {
-                    openExternalBrowser(href);
+                    openExternalBrowser(safeHref);
                   }
                 }
               }
