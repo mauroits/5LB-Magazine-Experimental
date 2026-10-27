@@ -61,7 +61,7 @@ export const BadgeUnlockCelebrationModal: React.FC<BadgeUnlockCelebrationModalPr
               onClose();
               onViewAllBadges();
             }}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md transition active:scale-95 cursor-pointer"
+            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition active:scale-95 cursor-pointer inline-flex items-center justify-center gap-2"
           >
             <Award className="w-4 h-4" />
             <span>Vedi tutti i Badge</span>
@@ -69,7 +69,7 @@ export const BadgeUnlockCelebrationModal: React.FC<BadgeUnlockCelebrationModalPr
 
           <button
             onClick={onClose}
-            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition cursor-pointer"
+            className="flex-1 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md transition active:scale-95 cursor-pointer inline-flex items-center justify-center"
           >
             Continua a leggere
           </button>

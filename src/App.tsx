@@ -839,20 +839,6 @@ export default function App() {
     }
   }, [activeFilter, loadAccadeOggiFeed, loadFeed, showDiscreetNotice]);
 
-  // Aggiornamento manuale forzato (pulsante "Aggiorna" in Header o browser)
-  const handleManualRefresh = useCallback(() => {
-    if (activeFilter.type === 'quick' && activeFilter.id === 'today') {
-      loadAccadeOggiFeed(true);
-    } else if (activeFilter.type === 'quick' && activeFilter.id === 'all') {
-      loadFeed(true);
-    } else if (activeFilter.type === 'rss' && activeFilter.category) {
-      handleRetrySection();
-    } else {
-      loadAccadeOggiFeed(true);
-      loadFeed(true);
-    }
-  }, [activeFilter, loadAccadeOggiFeed, loadFeed, handleRetrySection]);
-
   // Filter Title label & search placeholder
   const isAllArchive = activeFilter.type === 'quick' && activeFilter.id === 'all';
   const searchPlaceholder = isAllArchive
@@ -1390,8 +1376,6 @@ export default function App() {
           onSearchChange={setSearchQuery}
           currentFilterLabel={filterTitle}
           searchPlaceholder={searchPlaceholder}
-          onRefresh={handleManualRefresh}
-          isRefreshing={isRefreshing}
         />
 
         {/* Article Feed Area */}
