@@ -28,7 +28,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Install Dependencies
         run: |
@@ -46,6 +45,11 @@ jobs:
 
       - name: Setup SPA Routing (404 Fallback)
         run: cp dist/index.html dist/404.html
+
+      # Inietta il file CNAME solo se il deploy sta girando sul repository di produzione
+      - name: Inject CNAME for Production
+        if: github.repository == 'mauroits/5LB-Magazine-APP'
+        run: echo "app.51b.eu" > dist/CNAME
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3

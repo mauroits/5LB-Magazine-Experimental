@@ -13,6 +13,15 @@ import {VitePWA} from 'vite-plugin-pwa';
  * 4. Fallback '/' per custom domain o ambiente locale/preview
  */
 function getBasePath(): string {
+  if (process.env.GITHUB_REPOSITORY) {
+    if (process.env.GITHUB_REPOSITORY.includes('5LB-Magazine-APP')) {
+      return '/';
+    }
+    if (process.env.GITHUB_REPOSITORY.includes('5LB-Magazine-Experimental')) {
+      return '/5LB-Magazine-Experimental/';
+    }
+  }
+
   if (process.env.BASE_PATH !== undefined && process.env.BASE_PATH !== '') {
     const bp = process.env.BASE_PATH.trim();
     if (!bp || bp === '/') return '/';
@@ -30,17 +39,6 @@ function getBasePath(): string {
     if (!bp || bp === '/') return '/';
     const withLeading = bp.startsWith('/') ? bp : `/${bp}`;
     return withLeading.endsWith('/') ? withLeading : `${withLeading}/`;
-  }
-
-  if (process.env.GITHUB_REPOSITORY) {
-    const parts = process.env.GITHUB_REPOSITORY.split('/');
-    const repoName = parts[1]?.trim();
-    if (repoName && repoName.toLowerCase().endsWith('.github.io')) {
-      return '/';
-    }
-    if (repoName) {
-      return `/${repoName}/`;
-    }
   }
 
   return '/';
