@@ -120,4 +120,24 @@ self.addEventListener('message', (event) => {
     if (event.data.lastModified) setMetaValue('lastModifiedHeader', event.data.lastModified);
     if (event.data.etag) setMetaValue('etagHeader', event.data.etag);
   }
+
+  // Pre-caricamento proattivo delle immagini per visualizzazione offline
+  if (event.data.type === '5lb:cache-images' && Array.isArray(event.data.urls)) {
+    if (typeof caches !== 'undefined') {
+      caches.open('5lb-article-images').then((cache) => {
+        event.data.urls.forEach((imgUrl) => {
+          if (imgUrl && typeof imgUrl === 'string') {
+            fetch(imgUrl, { mode: 'no-cors' })
+              .then((res) => {
+                if (res && (res.ok || res.type === 'opaque')) {
+                  cache.put(imgUrl, res);
+                }
+              })
+              .catch(() => {});
+          }
+        });
+      }).catch(() => {});
+    }
+  }
 });
+

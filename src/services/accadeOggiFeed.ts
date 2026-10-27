@@ -30,6 +30,78 @@ export class UpdateFailedWithCacheError extends Error {
 }
 
 /**
+ * URL base pubblico del Worker Cloudflare che ospita le immagini persistenti.
+ */
+export const WORKER_IMAGE_BASE_URL = 'https://telegram-feed.5lb-framework.workers.dev/img';
+
+/**
+ * Trasforma qualsiasi URL effimero di telesco.pe (cdn*.telesco.pe/file/:filename)
+ * nell'URL permanente servito da Cloudflare Worker con Edge Cache e durata 90 giorni.
+ */
+export function normalizeTelegramImageUrl(url: string | null | undefined): string | undefined {
+  if (!url || typeof url !== 'string') return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+
+  // Se già riscritta con il percorso del worker (/img/ o dominio worker), la lascia inalterata
+  if (trimmed.includes('/img/') || trimmed.includes('telegram-feed.5lb-framework.workers.dev')) {
+    return trimmed;
+  }
+
+  return trimmed.replace(
+    /https?:\/\/cdn\d*\.telesco\.pe\/file\/([A-Za-z0-9_-]+\.[a-zA-Z0-9]+)/gi,
+    `${WORKER_IMAGE_BASE_URL}/$1`
+  );
+}
+
+/**
+ * Riscrive tutti gli <img> e link a immagini effimere di telesco.pe presenti nel testo HTML
+ * di un post Telegram prima di salvarlo o visualizzarlo.
+ */
+export function rewriteTelegramHtmlImages(html: string): string {
+  if (!html) return '';
+  return html.replace(
+    /https?:\/\/cdn\d*\.telesco\.pe\/file\/([A-Za-z0-9_-]+\.[a-zA-Z0-9]+)/gi,
+    `${WORKER_IMAGE_BASE_URL}/$1`
+  );
+}
+
+/**
+ * Pre-riscalda la cache locale del browser e del Service Worker per le anteprime degli articoli.
+ */
+export function prewarmTelegramImages(posts: BloggerPost[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const urlsToWarm: string[] = [];
+    for (const post of posts) {
+      if (post.thumbnail && !urlsToWarm.includes(post.thumbnail)) {
+        urlsToWarm.push(post.thumbnail);
+      }
+    }
+
+    if (urlsToWarm.length === 0) return;
+
+    // Preload asincrono leggero nel browser
+    setTimeout(() => {
+      urlsToWarm.forEach((url) => {
+        const img = new Image();
+        img.src = url;
+      });
+
+      // Notifica anche il Service Worker per salvare direttamente in CacheStorage
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: '5lb:cache-images',
+          urls: urlsToWarm,
+        });
+      }
+    }, 500);
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Inizializza i post di Accade Oggi caricandoli da IndexedDB (store feed_meta).
  * Il feed di Accade Oggi è rigorosamente separato dall'archivio degli articoli del Magazine.
  */
@@ -44,7 +116,13 @@ export async function initAccadeOggiStorage(): Promise<{
     inMemoryLastCheckedAt = meta?.lastCheckedAt || inMemoryAccadeOggiTimestamp;
 
     if (meta && Array.isArray(meta.posts) && meta.posts.length > 0) {
-      inMemoryAccadeOggiPosts = meta.posts.slice(0, ACCADE_OGGI_MAX_POSTS);
+      // Normalizza retroattivamente le immagini già salvate in precedenza per eliminare link telesco.pe scaduti
+      inMemoryAccadeOggiPosts = meta.posts.slice(0, ACCADE_OGGI_MAX_POSTS).map((p) => ({
+        ...p,
+        thumbnail: normalizeTelegramImageUrl(p.thumbnail),
+        content: rewriteTelegramHtmlImages(p.content || ''),
+      }));
+      prewarmTelegramImages(inMemoryAccadeOggiPosts);
     }
   } catch {
     // In-memory fallback
@@ -78,17 +156,24 @@ export function getCachedAccadeOggiPosts(): BloggerPost[] {
  * NON tocca l'archivio degli articoli del Magazine.
  */
 export function saveCachedAccadeOggiPosts(posts: BloggerPost[], lastCheckedAt: number = Date.now()): void {
-  const limited = posts.slice(0, ACCADE_OGGI_MAX_POSTS);
-  inMemoryAccadeOggiPosts = limited;
+  const normalizedPosts = posts.slice(0, ACCADE_OGGI_MAX_POSTS).map((p) => ({
+    ...p,
+    thumbnail: normalizeTelegramImageUrl(p.thumbnail),
+    content: rewriteTelegramHtmlImages(p.content || ''),
+  }));
+
+  inMemoryAccadeOggiPosts = normalizedPosts;
   inMemoryAccadeOggiTimestamp = Date.now();
   inMemoryLastCheckedAt = lastCheckedAt;
 
   setFeedMeta(ACCADE_OGGI_FEED_KEY, {
     downloadedAt: inMemoryAccadeOggiTimestamp,
     lastCheckedAt: inMemoryLastCheckedAt,
-    postIds: limited.map((p) => p.id),
-    posts: limited,
+    postIds: normalizedPosts.map((p) => p.id),
+    posts: normalizedPosts,
   }).catch(() => {});
+
+  prewarmTelegramImages(normalizedPosts);
 }
 
 /**
@@ -285,8 +370,9 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
             link = linkEl.getAttribute('href')!;
           }
 
-          const content = entry.querySelector('content')?.textContent?.trim() || '';
-          const thumbnail = extractFirstImage(content);
+          const rawContent = entry.querySelector('content')?.textContent?.trim() || '';
+          const content = rewriteTelegramHtmlImages(rawContent);
+          const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
 
           const summary = content
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -321,8 +407,9 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
           const pubDate = item.querySelector('pubDate')?.textContent?.trim();
           const published = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
           const link = item.querySelector('link')?.textContent?.trim() || id;
-          const content = item.querySelector('description')?.textContent?.trim() || '';
-          const thumbnail = extractFirstImage(content);
+          const rawContent = item.querySelector('description')?.textContent?.trim() || '';
+          const content = rewriteTelegramHtmlImages(rawContent);
+          const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
 
           const summary = content
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -365,9 +452,9 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
       const published = (entryXml.match(/<published>([\s\S]*?)<\/published>/i) || [])[1]?.trim() || new Date().toISOString();
       const updated = (entryXml.match(/<updated>([\s\S]*?)<\/updated>/i) || [])[1]?.trim() || published;
       const link = (entryXml.match(/<link[^>]*href=["']([^"']+)["']/i) || [])[1]?.trim() || id;
-      const content = (entryXml.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1]?.trim() || '';
-
-      const thumbnail = extractFirstImage(content);
+      const rawContent = (entryXml.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1]?.trim() || '';
+      const content = rewriteTelegramHtmlImages(rawContent);
+      const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
       const summary = content
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')

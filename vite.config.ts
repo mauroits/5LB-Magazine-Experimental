@@ -131,11 +131,14 @@ export default defineConfig(() => {
               },
             },
             {
-              // Immagini degli articoli da Blogger, CDN Google, YouTube, Telegram e domini esterni
+              // Immagini degli articoli da Blogger, Cloudflare Worker, CDN Google, YouTube, Telegram e domini esterni
               urlPattern: ({ request, url }) => {
                 return (
                   request.destination === 'image' ||
                   /\.(?:png|jpg|jpeg|svg|webp|gif|avif|ico)(?:\?.*)?$/i.test(url.pathname) ||
+                  url.pathname.startsWith('/img/') ||
+                  url.pathname.includes('/api/telegram-image') ||
+                  url.hostname.includes('workers.dev') ||
                   url.hostname.includes('googleusercontent.com') ||
                   url.hostname.includes('bp.blogspot.com') ||
                   url.hostname.includes('blogger.com') ||
@@ -145,12 +148,12 @@ export default defineConfig(() => {
                   url.hostname.includes('t.me')
                 );
               },
-              handler: 'StaleWhileRevalidate',
+              handler: 'CacheFirst',
               options: {
                 cacheName: '5lb-article-images',
                 expiration: {
                   maxEntries: 500,
-                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                  maxAgeSeconds: 60 * 60 * 24 * 90, // 90 giorni (3 mesi)
                 },
                 cacheableResponse: {
                   statuses: [0, 200], // 0 per risposte opache CDN cross-origin

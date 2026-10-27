@@ -942,6 +942,116 @@ app.get('/api/accade-oggi-feed', async (req, res) => {
   return res.status(404).json({ error: 'telegram.xml non trovato' });
 });
 
+// 7. Telegram Images persistent proxy endpoint (/img/:filename and /api/telegram-image/:filename)
+const TTL_IMAGE_90_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+app.get(['/img/:filename', '/api/telegram-image/:filename'], async (req, res) => {
+  const rawFilename = req.params.filename || '';
+  const cleanFilename = rawFilename.replace(/[^A-Za-z0-9_.-]/g, '');
+
+  if (!cleanFilename) {
+    return res.status(400).send('Filename non valido');
+  }
+
+  const cacheKey = `img:${cleanFilename}`;
+  const cached = cacheStore.get(cacheKey);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader(
+    'Cache-Control',
+    'public, max-age=7776000, s-maxage=7776000, stale-while-revalidate=86400, immutable'
+  );
+
+  const contentType = cleanFilename.endsWith('.png')
+    ? 'image/png'
+    : cleanFilename.endsWith('.webp')
+    ? 'image/webp'
+    : 'image/jpeg';
+
+  if (cached && cached.isFresh) {
+    res.setHeader('Content-Type', cached.contentType || contentType);
+    res.setHeader('ETag', cached.etag);
+    if (matchesConditionalHeaders(req, cached.etag)) {
+      return res.status(304).end();
+    }
+    const buffer = Buffer.from(cached.body, 'base64');
+    return res.status(200).send(buffer);
+  }
+
+  // 1. Prova prima dal Cloudflare Worker
+  try {
+    const workerImgUrl = `https://telegram-feed.5lb-framework.workers.dev/img/${cleanFilename}`;
+    const workerRes = await fetch(workerImgUrl, {
+      headers: {
+        'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+        Accept: 'image/*,*/*;q=0.8',
+      },
+    });
+
+    if (workerRes.ok) {
+      const arrayBuffer = await workerRes.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mime = workerRes.headers.get('content-type') || contentType;
+      const etag = `"${cleanFilename}"`;
+
+      cacheStore.set(cacheKey, {
+        body: buffer.toString('base64'),
+        contentType: mime,
+        etag,
+        ttlMs: TTL_IMAGE_90_DAYS_MS,
+      });
+
+      res.setHeader('Content-Type', mime);
+      res.setHeader('ETag', etag);
+      return res.status(200).send(buffer);
+    }
+  } catch (err) {
+    console.warn(`Tentativo immagine da Worker per ${cleanFilename} fallito:`, err);
+  }
+
+  // 2. Fallback on-demand da Telegram CDN
+  const candidateHosts = ['cdn4.telesco.pe', 'cdn1.telesco.pe'];
+  for (const host of candidateHosts) {
+    try {
+      const cdnUrl = `https://${host}/file/${cleanFilename}`;
+      const cdnRes = await fetch(cdnUrl, {
+        headers: {
+          'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+          Accept: 'image/*,*/*;q=0.8',
+        },
+      });
+
+      if (cdnRes.ok) {
+        const arrayBuffer = await cdnRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const mime = cdnRes.headers.get('content-type') || contentType;
+        const etag = `"${cleanFilename}"`;
+
+        cacheStore.set(cacheKey, {
+          body: buffer.toString('base64'),
+          contentType: mime,
+          etag,
+          ttlMs: TTL_IMAGE_90_DAYS_MS,
+        });
+
+        res.setHeader('Content-Type', mime);
+        res.setHeader('ETag', etag);
+        return res.status(200).send(buffer);
+      }
+    } catch {
+      // Prova host successivo
+    }
+  }
+
+  if (cached) {
+    const buffer = Buffer.from(cached.body, 'base64');
+    res.setHeader('Content-Type', cached.contentType || contentType);
+    return res.status(200).send(buffer);
+  }
+
+  return res.status(404).send('Immagine non trovata');
+});
+
 // ============================================================================
 // SERVER INITIALIZATION
 // ============================================================================

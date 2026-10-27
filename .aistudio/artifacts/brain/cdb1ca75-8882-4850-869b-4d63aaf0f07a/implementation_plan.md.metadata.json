@@ -1,6 +1,6 @@
 {
-  "summary":  "Piano dettagliato per la rimozione del banner manuale di aggiornamento versione e la configurazione del ciclo di vita PWA silenzioso in background alla successiva riapertura dell'applicazione, risolvendo il problema del salto di schermata e dello schermo bianco.",
-  "updatedAt":  "2026-10-27T07:38:28.182819988Z",
+  "summary":  "Piano di implementazione per la risoluzione definitiva della scadenza delle immagini del feed Accade Oggi (Telegram). Introduce un sistema a doppio livello: proxy e pre-caching persistente su Cloudflare Worker e Cloudflare Edge Cache con memorizzazione binaria in KV Store, riscrittura trasparente degli URL delle immagini in telegram.xml, endpoint di fallback in server.ts per sviluppo locale, e caching offline proattivo tramite Service Worker CacheStorage nella PWA.",
+  "updatedAt":  "2026-10-27T07:51:38.621973392Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
