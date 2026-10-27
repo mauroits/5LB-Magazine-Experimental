@@ -1,95 +1,105 @@
-# Piano Architetturale: Ottimizzazione Feed "Accade Oggi" & Notifiche
+# Rimozione Controllo Manuale Versioni & Aggiornamento PWA Silenzioso in Background
 
-Questo piano risponde all'analisi dei log di Cloudflare, risolve le inefficienze di rete (chiamate triple e polling frequente), previene il fenomeno del **Thundering Herd** paventato dall'utente e garantisce il corretto funzionamento delle **notifiche push dell'app**.
+Eliminazione completa del banner e del tasto manuale "Nuova versione disponibile" / "Aggiorna", riconfigurando il ciclo di vita del Service Worker per aggiornamenti automatici e trasparenti in background applicati alla successiva riapertura naturale dell'app, eliminando salti di schermata e crash a schermo bianco.
 
----
+## User Review & Critical Decisions
 
-## 1. Analisi del Problema & Considerazioni dell'Utente
+> [!IMPORTANT]
+> In base alle preferenze confermate:
+> 1. **Nessun avviso o banner manuale a video**: Il popup "Nuova versione disponibile" e il relativo pulsante "Aggiorna" vengono eliminati dall'interfaccia utente.
+> 2. **Attivazione alla successiva riapertura**: Il browser e il Service Worker scaricano gli aggiornamenti del codice in background e subentrano in modo pulito alla riapertura naturale della pagina o della PWA, senza reload forzati simultanei.
+> 3. **Distinzione chiara**: Il tasto "Aggiorna contenuti" (icona a forma di freccia circolare presente nell'Header e nella pagina Info) rimane regolarmente attivo, poiché serve a scaricare gli ultimi articoli da Blogger e dal feed Telegram di *Accade Oggi*, non a reinstallare il codice dell'app.
 
-### Perché Cloudflare ha registrato 21 chiamate in 40 minuti?
-1. **Triple Fetch all'avvio / focus**: all'avvio dell'app venivano invocati contemporaneamente `initAccadeOggiStorage()` e l'evento `window.addEventListener('focus')`. Senza un blocco sulle richieste concorrenti (*in-flight promise deduplication*), il browser inviava fino a 3 richieste GET identiche a distanza di 100 millisecondi l'una dall'altra (come confermato dai timestamp del log: `20:28:43.850`, `20:28:43.996`, `20:28:44.135`).
-2. **Bypass forzato della cache (`cache: 'no-cache'`)**: nel file `src/services/accadeOggiFeed.ts`, la chiamata `fetch(feedUrl, { cache: 'no-cache' })` ordinava al browser di ignorare l'intestazione HTTP `Cache-Control: public, max-age=3600` inviata dal Cloudflare Worker, contattando ogni volta i server di Cloudflare.
-3. **Polling ogni 60 secondi in primo piano**: in `src/App.tsx` era attivo un `setInterval` a 60 secondi che ricontrollava il feed ad ogni minuto e ad ogni cambio scheda.
-
-### Il rischio "Thundering Herd" (Tempesta di richieste a orari fissi)
-L'osservazione dell'utente è **estremamente acuta e corretta**:
-> Se si imposta una regola rigida tipo *"scarica esattamente alle 09:05:00"*, quando centinaia o migliaia di utenti hanno l'app aperta o la aprono nello stesso momento, tutti i dispositivi invierebbero una richiesta al server nello stesso identico secondo (*Thundering Herd*).
+- **Decisione Confermata 1**: Rimozione totale del banner UI per l'aggiornamento software dell'app in `App.tsx`.
+- **Decisione Confermata 2**: Aggiornamento automatico e trasparente gestito dal Service Worker in background senza richiedere azioni manuali dell'utente.
 
 ---
 
-## 2. La Soluzione Ottimale: CDN Edge Cache + Client Jitter + Cooldown
+## 1. Overview & Core Concept
 
-Per garantire le notifiche tempestive senza sovraccaricare il Worker né rischiare il Thundering Herd, si adotta l'architettura standard per feed asincroni:
+- **Cosa fa**: Riconfigura la gestione delle versioni dell'applicazione PWA. Quando viene rilasciata una nuova release del codice sul server o su GitHub Pages, il Service Worker la scarica silenziosamente in background. La nuova versione diventa attiva alla successiva apertura o riavvio dell'applicazione.
+- **Benefici per l'utente**:
+  - Nessun popup invadente che compare durante la lettura o la navigazione.
+  - Risoluzione definitiva del loop con "salto" grafico causato dai reload multipli.
+  - Eliminazione totale della schermata bianca provocata dalla race condition tra `updateSWFunction` e `window.location.reload()`.
+
+---
+
+## 2. User Experience & Visual Design
+
+- **Esperienza Utente Semplificata**: L'utente naviga e consulta gli articoli del Magazine e la rubrica *Accade Oggi* senza alcuna interruzione.
+- **Risoluzione Anomalie Grafiche**:
+  - Eliminato il banner scuro in basso con pulsante arancione "Aggiorna".
+  - Nessun refresh improvviso né perdita di contesto durante la sessione di lettura.
+- **Stato Offline & Installazione PWA Preservati**: L'indicatore "OFFLINE" e il pulsante per installare l'app su Android, iOS e Desktop continuano a funzionare regolarmente con tutte le garanzie di conformità PWA.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Approccio Scelto (Auto-Update Silenzioso)**:
+  - In `vite.config.ts`, configurazione di `registerType: 'autoUpdate'`.
+  - In `src/services/pwaUpdateService.ts`, rimozione dei trigger manuali `SKIP_WAITING` multipli e del `window.location.reload()` aggressivo in `finally`.
+  - In `src/App.tsx`, rimozione dello stato `isPwaUpdateAvailable`, del banner JSX in basso e del relativo listener manuale.
+- **Perché**: Elimina alla radice la causa della schermata bianca (interruzione simultanea del ciclo di vita dei worker e crash della cache dei bundle) e rispetta fedelmente la scelta dell'utente di non dover gestire manualmente versioni e aggiornamenti.
+- **Alternative Scartate**:
+  - *Mantenere il banner con prompt manuale*: Scartata perché l'utente ha confermato esplicitamente di voler rimuovere del tutto il controllo manuale delle versioni.
+  - *Ricaricamento automatico forzato della pagina a caldo*: Scartata per evitare che la pagina si ricarichi all'improvviso mentre l'utente sta leggendo un articolo o consultando il taccuino.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
+### Schema Ciclo di Vita Aggiornamenti
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                      Client PWA                        │
-│                                                        │
-│  [Avvio / Focus / Timer 30 min]                        │
-│                 │                                      │
-│                 ▼                                      │
-│  Cooldown check: Sono passati >= 30 min?               │
-│  ├── NO  ──► Usa dati locali IndexedDB (0 chiamate)   │
-│  └── SÌ  ──► Deduplicazione Promise (max 1 chiamata)   │
-│                 │                                      │
-│                 ▼ fetch(url, { cache: 'default' })     │
-└─────────────────┬──────────────────────────────────────┘
-                  │
-                  ▼
-┌────────────────────────────────────────────────────────┐
-│                Cloudflare Edge Cache                   │
-│                                                        │
-│  Il primo utente risveglia la CDN.                     │
-│  Cloudflare tiene in memoria edge per 30-60 min.       │
-│  Tutti i successivi 999 utenti ricevono la risposta   │
-│  istantanea dalla cache edge (0 esecuzioni Worker KV). │
-└────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    Navigazione Utente                       │
+│    (Lettura articoli, consultazione feed, taccuino 5LB)     │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+            Verifica periodica in background (SW)
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│               Download Silenzioso Nuovi File                │
+│    Il Service Worker memorizza i nuovi bundle nella cache   │
+│             SENZA interrompere la sessione attiva           │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+          Chiusura/Nuova apertura naturale della scheda/app
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│             Attivazione Nuova Versione a Freddo             │
+│        Avvio istantaneo con il nuovo codice aggiornato       │
+│           Nessun salto grafico, nessuna schermata bianca    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### I tre pilastri della soluzione:
-1. **Riuso della Cache HTTP del Browser (`cache: 'default'`)**:
-   - Rimuovere `cache: 'no-cache'`.
-   - Il browser dell'utente rispetta l'header `Cache-Control: public, max-age=1800` (o `3600`), riutilizzando la copia locale senza toccare la rete se la risposta è ancora valida.
-2. **Deduplicazione in-flight delle richieste concorrenti**:
-   - Se `fetchAccadeOggiPosts()` viene chiamata contemporaneamente (es. all'avvio da `init` e da `focus`), la seconda chiamata riutilizza la stessa Promise già in volo invece di aprire una seconda connessione di rete.
-3. **Controllo a intervallo cadenzato (30 minuti) con Jitter**:
-   - Sostituire il polling ogni 60 secondi con un controllo ogni **30 minuti** (o al ritorno in primo piano se sono passati almeno 30 minuti).
-   - Inserire una variazione casuale (*jitter*) di ±2 minuti per evitare che più client sincronizzati interroghino il server nello stesso istante.
-   - Forzare l'aggiornamento immediato di rete solo se l'utente compie un'azione esplicita (click sul pulsante "Riprova" o pull-to-refresh).
+### Componenti Interessati
 
----
+1. **`vite.config.ts`**:
+   - Impostazione di `registerType: 'autoUpdate'` nel plugin `VitePWA`.
+   - Pulizia delle opzioni del Service Worker per consentire la transizione trasparente tra versioni.
 
-## 3. Gestione Notifiche dell'App
+2. **`src/services/pwaUpdateService.ts`**:
+   - Eliminazione del doppio reload concorrente e della gestione manuale dei bottoni.
+   - Semplificazione della registrazione PWA affinché registri il Service Worker in modalità sicura e senza avvisi bloccanti.
 
-- **Rilevamento nuovi post (`checkForNewAccadeOggiAndNotify`)**:
-  - Quando una fetch (periodica o alla riapertura) rileva un post con data successiva a `ACCADE_OGGI_LAST_SEEN_KEY`, attiva:
-    1. Notifica Push nativa di sistema del browser/sistema operativo (Android, Windows, macOS, iOS).
-    2. Segnale acustico armonico (*chime* Web Audio API).
-    3. Notifica Toast in-app con collegamento diretto per aprire il post.
-- **Service Worker & Periodic Background Sync**:
-  - Mantenere attivo il listener del Service Worker per la gestione dei click e della sincronizzazione in background su Android.
-
----
-
-## 4. Modifiche ai File
-
-1. **`src/services/accadeOggiFeed.ts`**:
-   - Aggiungere `inFlightFetchPromise: Promise<BloggerPost[]> | null` per deduplicare chiamate parallele.
-   - Sostituire `cache: 'no-cache'` con `cache: 'default'`.
-   - Riformulare `shouldRefreshTelegramFeed` impostando una finestra minima di rispetto della cache (30 minuti) e jitter per prevenire il Thundering Herd.
-2. **`src/config/telegramConfig.ts`**:
-   - Definire `MIN_CHECK_INTERVAL_MS = 30 * 60 * 1000` (30 minuti).
-   - Configurare il jitter massimo (es. 2-5 minuti).
 3. **`src/App.tsx`**:
-   - Rimuovere il `setInterval` a 60 secondi in favore di un timer a 30 minuti.
-   - Prevenire chiamate ridondanti all'avvio tra `initAccadeOggiStorage` e `handleForeground`.
-4. **`worker/index.js`**:
-   - Mantenere l'ottima intestazione `Cache-Control: public, max-age=1800` (30 minuti di edge cache su Cloudflare), che azzera il carico verso i bridge RSS e protegge da qualsiasi picco di traffico.
+   - Rimozione dello state `isPwaUpdateAvailable`.
+   - Rimozione del componente banner galleggiante JSX in fondo al render.
+   - Mantenimento inalterato del pulsante per la sincronizzazione dei contenuti RSS/Atom nell'Header.
 
 ---
 
-## 5. Verifica e Collaudo
+## Verification Plan
 
-- **Verifica TypeScript & Build**: Esecuzione di `compile_applet` per verificare che non vi siano regressioni.
-- **Test di deduplicazione**: Verificare che chiamate multiple a `fetchAccadeOggiPosts()` generino una sola richiesta HTTP.
-- **Test di ricezione e notifica**: Verificare che l'arrivo di un nuovo post generi la notifica di sistema e il suono.
+### Test Automatici & Compilazione
+- Esecuzione di `npm run build` / `compile_applet` per verificare che non vi siano errori di tipo TypeScript o dipendenze orfane.
+
+### Test Manuali
+- Verifica dell'interfaccia: il banner "Nuova versione disponibile" e il tasto "Aggiorna" non compaiono più a video.
+- Verifica del tasto "Aggiorna contenuti" nell'Header (icona `RotateCw`): continua a riscaricare i post da Blogger e dal feed Telegram di *Accade Oggi* senza interferire con il software.
+- Verifica offline: l'applicazione continua a memorizzare gli articoli in IndexedDB e ad avviarsi istantaneamente anche senza connessione internet.

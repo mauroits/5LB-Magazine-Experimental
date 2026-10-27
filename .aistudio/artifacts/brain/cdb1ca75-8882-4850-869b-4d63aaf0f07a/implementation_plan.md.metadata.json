@@ -1,6 +1,6 @@
 {
-  "summary":  "Piano di ottimizzazione architetturale per il feed \"Accade Oggi\": risoluzione inefficienze di rete, prevenzione Thundering Herd tramite HTTP Cache e Jitter, deduplicazione chiamate concorrenti e mantenimento delle notifiche push native dell'app.",
-  "updatedAt":  "2026-10-26T20:57:50.979157928Z",
+  "summary":  "Piano dettagliato per la rimozione del banner manuale di aggiornamento versione e la configurazione del ciclo di vita PWA silenzioso in background alla successiva riapertura dell'applicazione, risolvendo il problema del salto di schermata e dello schermo bianco.",
+  "updatedAt":  "2026-10-27T07:38:28.182819988Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -86,7 +86,6 @@ import { useInterfaceZoom } from './hooks/useInterfaceZoom';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import {
   initPwaUpdate,
-  applyPwaUpdate,
   checkPwaUpdateOnForeground,
 } from './services/pwaUpdateService';
 import { Bell, ArrowRight, X } from 'lucide-react';
@@ -156,8 +155,6 @@ export default function App() {
   const [onlineSearchResults, setOnlineSearchResults] = useState<Record<string, BloggerPost[]>>({});
   const activeSearchReqIdRef = useRef<number>(0);
 
-  // PWA update prompt state ("Nuova versione disponibile")
-  const [isPwaUpdateAvailable, setIsPwaUpdateAvailable] = useState(false);
 
   // Home view on open is now the Accade Oggi feed
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>({
@@ -371,10 +368,8 @@ export default function App() {
     // Listener messaggi Service Worker per navigazione diretta ad articolo su click notifica
     const cleanupSWListener = initSWMessageListener();
 
-    // Listener aggiornamenti PWA (prompt "Nuova versione disponibile")
-    const cleanupPwaListener = initPwaUpdate(() => {
-      setIsPwaUpdateAvailable(true);
-    });
+    // Inizializzazione registrazione Service Worker per aggiornamenti silenziosi in background
+    const cleanupPwaListener = initPwaUpdate();
 
     // Controllo aggiornamenti PWA all'avvio con limite 24 ore
     checkPwaUpdateOnForeground().catch(() => {});
@@ -1561,35 +1556,6 @@ export default function App() {
       />
 
 
-      {/* Banner non invasivo aggiornamento PWA */}
-      {isPwaUpdateAvailable && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md z-50 animate-in slide-in-from-bottom-3 duration-300 pointer-events-auto">
-          <div className="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl bg-[#000836]/95 text-white backdrop-blur-md shadow-2xl border border-sky-500/40">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
-              <span className="text-xs sm:text-sm font-semibold text-slate-100 truncate">
-                Nuova versione disponibile
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => applyPwaUpdate()}
-                className="px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 active:scale-95 text-white text-xs font-bold transition shadow-sm cursor-pointer"
-              >
-                Aggiorna
-              </button>
-              <button
-                onClick={() => setIsPwaUpdateAvailable(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-                aria-label="Chiudi avviso"
-                title="Chiudi avviso"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* PWA Offline indicator */}
       <OfflineIndicator />
