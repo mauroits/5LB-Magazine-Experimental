@@ -6,6 +6,11 @@ import {
   setFeedMeta,
   getFeedDownloadedAt,
 } from '../utils/idbStorage';
+import {
+  decodeHtmlEntities,
+  cleanTextSnippet,
+  sanitizePlainText,
+} from '../utils/textUtils';
 
 export const ACCADE_OGGI_MAX_POSTS = 15;
 const ACCADE_OGGI_FEED_KEY = 'accade_oggi';
@@ -116,9 +121,11 @@ export async function initAccadeOggiStorage(): Promise<{
     inMemoryLastCheckedAt = meta?.lastCheckedAt || inMemoryAccadeOggiTimestamp;
 
     if (meta && Array.isArray(meta.posts) && meta.posts.length > 0) {
-      // Normalizza retroattivamente le immagini già salvate in precedenza per eliminare link telesco.pe scaduti
       inMemoryAccadeOggiPosts = meta.posts.slice(0, ACCADE_OGGI_MAX_POSTS).map((p) => ({
         ...p,
+        title: sanitizePlainText(p.title),
+        summary: decodeHtmlEntities(p.summary),
+        categories: (p.categories || []).map((c) => sanitizePlainText(c)),
         thumbnail: normalizeTelegramImageUrl(p.thumbnail),
         content: rewriteTelegramHtmlImages(p.content || ''),
       }));
@@ -312,18 +319,7 @@ export function shouldRefreshTelegramFeed(
 }
 
 function cleanHtmlEntities(str: string): string {
-  if (!str) return '';
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#33;/g, '!')
-    .replace(/&#13;/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return sanitizePlainText(str);
 }
 
 /**
@@ -373,22 +369,16 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
           const rawContent = entry.querySelector('content')?.textContent?.trim() || '';
           const content = rewriteTelegramHtmlImages(rawContent);
           const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
-
-          const summary = content
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 180);
+          const summary = cleanTextSnippet(content, 180);
+          const cleanTitle = sanitizePlainText(rawTitle);
 
           posts.push({
             id,
-            title: cleanHtmlEntities(rawTitle),
+            title: cleanTitle,
             published,
             updated,
             content,
-            summary: summary ? `${summary}...` : rawTitle,
+            summary: summary || cleanTitle,
             categories: ['Accade oggi'],
             link,
             author: { name: '5LB Magazine' },
@@ -410,22 +400,16 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
           const rawContent = item.querySelector('description')?.textContent?.trim() || '';
           const content = rewriteTelegramHtmlImages(rawContent);
           const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
-
-          const summary = content
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 180);
+          const summary = cleanTextSnippet(content, 180);
+          const cleanTitle = sanitizePlainText(rawTitle);
 
           posts.push({
             id,
-            title: cleanHtmlEntities(rawTitle),
+            title: cleanTitle,
             published,
             updated: published,
             content,
-            summary: summary ? `${summary}...` : rawTitle,
+            summary: summary || cleanTitle,
             categories: ['Accade oggi'],
             link,
             author: { name: '5LB Magazine' },
@@ -455,19 +439,16 @@ export function parseAtomXmlToPosts(xmlText: string): BloggerPost[] {
       const rawContent = (entryXml.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1]?.trim() || '';
       const content = rewriteTelegramHtmlImages(rawContent);
       const thumbnail = normalizeTelegramImageUrl(extractFirstImage(content));
-      const summary = content
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 180);
+      const summary = cleanTextSnippet(content, 180);
+      const cleanTitle = sanitizePlainText(rawTitle.replace(/<[^>]+>/g, ''));
 
       posts.push({
         id,
-        title: cleanHtmlEntities(rawTitle.replace(/<[^>]+>/g, '')),
+        title: cleanTitle,
         published,
         updated,
         content,
-        summary: summary ? `${summary}...` : rawTitle,
+        summary: summary || cleanTitle,
         categories: ['Accade oggi'],
         link,
         author: { name: '5LB Magazine' },

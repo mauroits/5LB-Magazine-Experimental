@@ -14,7 +14,7 @@ import { RemoteBannerConfig } from '../types';
 
 export const REMOTE_BANNER_GIST_URL: string =
   (import.meta.env.VITE_REMOTE_BANNER_GIST_URL as string) ||
-  'https://gist.githubusercontent.com/mauroits/3b3b18e7d13dc5264a8bf2f568b8de11/raw/ab336bb57a0fb597b31af46f4e167820849e3051/banner.json';
+  'https://gist.githubusercontent.com/mauroits/3b3b18e7d13dc5264a8bf2f568b8de11/raw/banner.json';
 
 export const DISMISSED_BANNER_STORAGE_KEY = '5lb_dismissed_remote_banner_id';
 export const CACHED_BANNER_STORAGE_KEY = '5lb_cached_remote_banner';

@@ -23,6 +23,7 @@ import {
 import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
 import { toHttpsUrl } from '../utils/safeUrl';
+import { decodeHtmlEntities } from '../utils/textUtils';
 import { ArchiveBadgeButton } from './BadgeIcon';
 import { getCurrentBadge } from '../services/badgeService';
 
@@ -463,7 +464,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                     <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs">
                       <img
                         src={safeThumb}
-                        alt={post.title}
+                        alt={decodeHtmlEntities(post.title)}
                         loading="lazy"
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                         onError={(e) => {
@@ -530,12 +531,12 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                   <h3 className={`text-base sm:text-lg font-bold leading-snug line-clamp-3 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors ${
                     post.isRead ? 'text-slate-700 dark:text-slate-300 font-semibold' : 'text-slate-900 dark:text-slate-100'
                   }`}>
-                    {post.title}
+                    {decodeHtmlEntities(post.title)}
                   </h3>
 
                   {/* Snippet */}
                   <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed">
-                    {post.summary}
+                    {decodeHtmlEntities(post.summary)}
                   </p>
                 </div>
 
@@ -546,7 +547,7 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                       key={idx}
                       className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                     >
-                      {cat}
+                      {decodeHtmlEntities(cat)}
                     </span>
                   ))}
                   {post.categories.length > 3 && (
@@ -590,14 +591,14 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                     </span>
                     {post.categories[0] && (
                       <span className="px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-300 font-medium truncate max-w-[120px]">
-                        {post.categories[0]}
+                        {decodeHtmlEntities(post.categories[0])}
                       </span>
                     )}
                   </div>
                   <h4 className={`text-sm sm:text-base font-semibold truncate ${
                     post.isRead ? 'text-slate-700 dark:text-slate-300' : 'text-slate-900 dark:text-slate-100 font-bold'
                   }`}>
-                    {post.title}
+                    {decodeHtmlEntities(post.title)}
                   </h4>
                 </div>
               </div>

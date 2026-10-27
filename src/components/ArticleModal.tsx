@@ -32,6 +32,7 @@ import { sanitizeArticleHtml } from '../utils/sanitizeHtml';
 import { toHttpsUrl, toHttpOrHttpsUrl } from '../utils/safeUrl';
 import { trackEvent } from '../services/analytics';
 import { openExternalBrowser } from '../utils/browserLauncher';
+import { decodeHtmlEntities } from '../utils/textUtils';
 
 export interface ArticleChunk {
   index: number;
@@ -78,13 +79,9 @@ export function extractArticleChunks(
       });
 
       const rawText = doc.body.textContent || '';
-      const cleanBody = rawText
+      const cleanBody = decodeHtmlEntities(rawText)
         .replace(/\r\n/g, '\n')
         .replace(/\t/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
         .replace(/[ \t]+/g, ' ')
         .replace(/\n\s*\n+/g, '\n')
         .trim();
@@ -824,14 +821,14 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({
                 key={i}
                 className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300"
               >
-                {c}
+                {decodeHtmlEntities(c)}
               </span>
             ))}
           </div>
 
           {/* Title */}
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-50 leading-tight mb-4">
-            {post.title}
+            {decodeHtmlEntities(post.title)}
           </h1>
 
           {/* Metadata bar */}

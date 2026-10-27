@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { BloggerPost } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
+import { decodeHtmlEntities } from '../utils/textUtils';
 
 export interface ArchiveArticlePromptModalProps {
   isOpen: boolean;
@@ -148,7 +149,7 @@ export const ArchiveArticlePromptModal: React.FC<ArchiveArticlePromptModalProps>
               <FileText className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-slate-800 dark:text-slate-200 line-clamp-2">
-                  {existingPost?.title || 'Articolo da magazine.5lb.eu'}
+                  {decodeHtmlEntities(existingPost?.title || 'Articolo da magazine.5lb.eu')}
                 </p>
                 {existingPost?.published && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">

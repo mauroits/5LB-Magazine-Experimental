@@ -13,6 +13,13 @@ import {
   setAppStateItem,
 } from '../utils/idbStorage';
 import { sanitizeArticleLink } from '../utils/safeUrl';
+import {
+  decodeHtmlEntities,
+  cleanTextSnippet,
+  sanitizePlainText,
+} from '../utils/textUtils';
+
+export { cleanTextSnippet, decodeHtmlEntities, sanitizePlainText };
 
 // Minimum interval between automatic background fetches from Blogger (configured in syncConfig.ts: 6 hours)
 export const FEED_CACHE_TTL_MS = FEED_SYNC_CONFIG.FOREGROUND_POLL_MS;
@@ -47,6 +54,9 @@ export async function initBloggerStorage(): Promise<{
 
     inMemoryCachedPosts = articles.map((p) => ({
       ...p,
+      title: sanitizePlainText(p.title),
+      summary: decodeHtmlEntities(p.summary),
+      categories: (p.categories || []).map((c) => sanitizePlainText(c)),
       isRead: inMemoryReadIds.has(p.id),
       isFavorite: inMemoryFavIds.has(p.id),
     }));
@@ -120,18 +130,6 @@ function extractFirstImage(html: string): string | undefined {
   return undefined;
 }
 
-// Clean HTML to generate a neat plain-text snippet
-function cleanTextSnippet(html: string, maxLength = 180): string {
-  if (!html) return '';
-  const text = html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (text.length <= maxLength) return text;
-  return text.substring(0, maxLength) + '...';
-}
 
 export function getReadPostIds(): Set<string> {
   return new Set(inMemoryReadIds);
@@ -189,6 +187,9 @@ export async function getCategoryFeedCache(category: string): Promise<{
     if (found) {
       posts.push({
         ...found,
+        title: sanitizePlainText(found.title),
+        summary: decodeHtmlEntities(found.summary),
+        categories: (found.categories || []).map((c) => sanitizePlainText(c)),
         isRead: inMemoryReadIds.has(found.id),
         isFavorite: inMemoryFavIds.has(found.id),
       });
@@ -221,14 +222,14 @@ export function parseBloggerEntry(
   const currentFavs = favIds || inMemoryFavIds;
 
   const id = entry.id?.$t || Math.random().toString();
-  const title = (entry.title?.$t || 'Senza titolo').trim();
+  const title = sanitizePlainText(entry.title?.$t || 'Senza titolo');
   const published = entry.published?.$t || new Date().toISOString();
   const updated = entry.updated?.$t || published;
   const content = entry.content?.$t || entry.summary?.$t || '';
   const summary = cleanTextSnippet(content);
 
   const categories: string[] = Array.isArray(entry.category)
-    ? entry.category.map((c: any) => c.term || '').filter(Boolean)
+    ? entry.category.map((c: any) => sanitizePlainText(c.term || '')).filter(Boolean)
     : [];
 
   let link = 'https://magazine.5lb.eu';

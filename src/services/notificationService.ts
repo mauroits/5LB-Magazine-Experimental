@@ -1,5 +1,6 @@
 import { BloggerPost, NotificationItem } from '../types';
 import { getAssetUrl } from '../utils/assets';
+import { decodeHtmlEntities } from '../utils/textUtils';
 
 const NOTIFICATIONS_STORAGE_KEY = '5lb_magazine_notifications_v1';
 const LAST_SEEN_DATE_KEY = '5lb_magazine_last_seen_date_v1';
@@ -236,8 +237,8 @@ export function checkForNewPostsAndNotify(latestPosts: BloggerPost[]) {
     // A genuinely new article was posted!
     localStorage.setItem(LAST_SEEN_DATE_KEY, newest.published);
     triggerPushNotification(
-      'Nuovo articolo: ' + newest.title,
-      newest.summary.slice(0, 100) + '...',
+      'Nuovo articolo: ' + decodeHtmlEntities(newest.title),
+      decodeHtmlEntities(newest.summary).slice(0, 100) + '...',
       newest.link,
       newest.id
     );
@@ -287,8 +288,8 @@ export function checkForNewAccadeOggiAndNotify(latestPosts: BloggerPost[]) {
   if (newestDate > lastSeenDate) {
     localStorage.setItem(ACCADE_OGGI_LAST_SEEN_KEY, newest.published);
     triggerPushNotification(
-      'Accade Oggi: ' + newest.title,
-      newest.summary.slice(0, 100) + '...',
+      'Accade Oggi: ' + decodeHtmlEntities(newest.title),
+      decodeHtmlEntities(newest.summary).slice(0, 100) + '...',
       newest.link,
       newest.id
     );

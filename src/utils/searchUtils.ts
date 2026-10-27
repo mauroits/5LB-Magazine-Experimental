@@ -34,20 +34,15 @@ export function matchesExactPhrase(text: string, query: string): boolean {
   }
 }
 
+import { decodeHtmlEntities } from './textUtils';
+
 /**
- * Strips HTML tags and common entities for clean text search.
+ * Strips HTML tags and decodes all HTML entities for clean text search.
  */
 export function cleanHtmlForSearch(html: string): string {
   if (!html) return '';
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ');
+  const withoutTags = html.replace(/<[^>]+>/g, ' ');
+  return decodeHtmlEntities(withoutTags).replace(/\s+/g, ' ').trim();
 }
 
 /**

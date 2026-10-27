@@ -34,6 +34,7 @@ import {
   trackPageView
 } from './services/analytics';
 import { postMatchesExactPhrase } from './utils/searchUtils';
+import { decodeHtmlEntities } from './utils/textUtils';
 import {
   fetchBloggerPosts,
   getCachedPosts,
@@ -231,8 +232,8 @@ export default function App() {
             // New article found! Trigger notification
             const notifItem: NotificationItem = {
               id: 'notif-' + Date.now(),
-              title: 'Nuovo articolo: ' + newestNetwork.title,
-              body: newestNetwork.summary.slice(0, 110) + '...',
+              title: 'Nuovo articolo: ' + decodeHtmlEntities(newestNetwork.title),
+              body: decodeHtmlEntities(newestNetwork.summary).slice(0, 110) + '...',
               date: new Date().toISOString(),
               read: false,
               postId: newestNetwork.id,
@@ -309,8 +310,8 @@ export default function App() {
             if (isAccadeOggiNotificationEnabled()) {
               const notifItem: NotificationItem = {
                 id: 'notif-today-' + Date.now(),
-                title: 'Accade Oggi: ' + newestNetwork.title,
-                body: newestNetwork.summary.slice(0, 110) + '...',
+                title: 'Accade Oggi: ' + decodeHtmlEntities(newestNetwork.title),
+                body: decodeHtmlEntities(newestNetwork.summary).slice(0, 110) + '...',
                 date: new Date().toISOString(),
                 read: false,
                 postId: newestNetwork.id,
@@ -904,9 +905,9 @@ export default function App() {
     const articlePath = getArticlePath(post);
 
     if (updateHistory) {
-      window.history.pushState({ postId: post.id }, post.title, articlePath);
+      window.history.pushState({ postId: post.id }, decodeHtmlEntities(post.title), articlePath);
     }
-    document.title = `${post.title} — 5LB Magazine`;
+    document.title = `${decodeHtmlEntities(post.title)} — 5LB Magazine`;
 
     // Invia visualizzazione di pagina e evento a Google Analytics (attivo sia con cookie che con modellazione cookieless)
     trackPageView(articlePath, post.title);

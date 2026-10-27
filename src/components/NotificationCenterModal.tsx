@@ -18,6 +18,7 @@ import {
   Monitor
 } from 'lucide-react';
 import { NotificationItem } from '../types';
+import { decodeHtmlEntities } from '../utils/textUtils';
 import {
   getStoredNotifications,
   markNotificationAsRead,
@@ -621,14 +622,14 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <h5 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {item.title}
+                      {decodeHtmlEntities(item.title)}
                     </h5>
                     <span className="text-[10px] text-slate-400 shrink-0">
                       {formatItalianDate(item.date)}
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-relaxed">
-                    {item.body}
+                    {decodeHtmlEntities(item.body)}
                   </p>
                 </div>
 
