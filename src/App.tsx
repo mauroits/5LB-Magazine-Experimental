@@ -19,7 +19,6 @@ import { openExternalBrowser } from './utils/browserLauncher';
 
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { RemoteAnnouncementBanner } from './components/RemoteAnnouncementBanner';
-import { InAppBrowserModal } from './components/InAppBrowserModal';
 import { CookieConsentModal } from './components/CookieConsentModal';
 import {
   BloggerPost,
@@ -178,9 +177,6 @@ export default function App() {
   const [promptArticleUrl, setPromptArticleUrl] = useState<string | null>(null);
   const [isDownloadingArticle, setIsDownloadingArticle] = useState(false);
 
-  // In-App browser modal state for external links from banner
-  const [inAppBrowserUrl, setInAppBrowserUrl] = useState<string | null>(null);
-  const [inAppBrowserTitle, setInAppBrowserTitle] = useState<string>("");
 
   // Active in-app Toast Notification
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
@@ -1266,7 +1262,8 @@ export default function App() {
   );
 
   // Handler per aprire link dal banner remoto:
-  // Se è un articolo di 5LB, lo apre nel visualizzatore nativo; altrimenti apre il browser interno in-app
+  // Se è un articolo 5LB presente in memoria, lo apre nel visualizzatore nativo;
+  // per tutti gli altri link (Google NotebookLM, pagine esterne, ecc.), apre nel browser integrato di sistema
   const handleOpenBannerUrl = useCallback(
     (url: string) => {
       if (!url) return;
@@ -1276,13 +1273,10 @@ export default function App() {
           handleSelectPost(match);
           return;
         }
-        handleInterceptArticleLink(url);
-        return;
       }
-      setInAppBrowserTitle("5LB Magazine");
-      setInAppBrowserUrl(url);
+      openExternalBrowser(url);
     },
-    [posts, handleSelectPost, handleInterceptArticleLink]
+    [posts, handleSelectPost]
   );
 
   const handleOpenBannerArticle = useCallback(
@@ -1295,10 +1289,10 @@ export default function App() {
       if (match) {
         handleSelectPost(match);
       } else {
-        handleInterceptArticleLink(urlOrId);
+        openExternalBrowser(urlOrId);
       }
     },
-    [posts, accadeOggiPosts, handleSelectPost, handleInterceptArticleLink]
+    [posts, accadeOggiPosts, handleSelectPost]
   );
 
   // Handler for downloading / updating an article from a magazine.5lb.eu URL into local archive
@@ -1592,13 +1586,6 @@ export default function App() {
         onOpenArticle={handleOpenBannerArticle}
       />
 
-      {/* Visualizzatore Web In-App per link esterni */}
-      <InAppBrowserModal
-        isOpen={Boolean(inAppBrowserUrl)}
-        url={inAppBrowserUrl}
-        title={inAppBrowserTitle}
-        onClose={() => setInAppBrowserUrl(null)}
-      />
 
       {/* Cookie Consent Modal / Banner (Informativa sui Cookie) */}
       <CookieConsentModal

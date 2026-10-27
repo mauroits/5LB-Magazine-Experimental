@@ -1,3 +1,16 @@
+/**
+ * Normalizza gli URL raw di GitHub Gist rimuovendo l'eventuale hash del commit
+ * (es. .../raw/ab336bb57a0fb597b31af46f4e167820849e3051/banner.json -> .../raw/banner.json)
+ * in modo che punti sempre automaticamente all'ultima versione pubblicata del Gist.
+ */
+export function normalizeGistRawUrl(url: string): string {
+  if (!url) return url;
+  return url.replace(
+    /(https:\/\/gist\.githubusercontent\.com\/[^\/]+\/[^\/]+\/raw)\/[a-f0-9]{40}\/(.+)/i,
+    "$1/$2"
+  );
+}
+
 import { RemoteBannerConfig } from '../types';
 import {
   REMOTE_BANNER_GIST_URL,
@@ -68,7 +81,7 @@ export function saveCachedBannerConfig(config: RemoteBannerConfig): void {
 export async function fetchRemoteBannerConfig(
   customUrl?: string
 ): Promise<RemoteBannerConfig> {
-  const targetUrl = customUrl || REMOTE_BANNER_GIST_URL;
+  const targetUrl = normalizeGistRawUrl(customUrl || REMOTE_BANNER_GIST_URL);
 
   // Costruisci URL con cache-busting per evitare che il CDN di GitHub o il browser blocchino le modifiche
   const cacheBuster = Math.floor(Date.now() / BANNER_CACHE_WINDOW_MS);

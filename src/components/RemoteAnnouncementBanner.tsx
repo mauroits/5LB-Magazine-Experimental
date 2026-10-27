@@ -23,6 +23,7 @@ import {
   dismissBanner,
   getCachedBannerConfig,
 } from '../services/remoteBannerService';
+import { openExternalBrowser } from "../utils/browserLauncher";
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { PWAInstallGuideModal, PWAInstallModalMode } from './PWAInstallGuideModal';
 
@@ -255,12 +256,12 @@ export const RemoteAnnouncementBanner: React.FC<RemoteAnnouncementBannerProps> =
       return;
     }
 
-    // Default: link web
+    // Default: link web (apre nel browser integrato dell'app)
     if (action.url) {
-      if (action.openIn === 'external') {
-        window.open(action.url, '_blank', 'noopener,noreferrer');
-      } else {
+      if (onOpenUrl) {
         onOpenUrl(action.url);
+      } else {
+        openExternalBrowser(action.url);
       }
     }
   };
