@@ -277,12 +277,13 @@ export const RemoteAnnouncementBanner: React.FC<RemoteAnnouncementBannerProps> =
 
   return (
     <>
-      <div
-        role="region"
-        aria-label="Avviso in evidenza"
-        className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-3 right-3 sm:left-auto sm:right-4 z-40 max-w-md bg-[#0e1838] text-white p-3.5 sm:p-4 rounded-3xl shadow-2xl border ${theme.containerBorder} flex items-center justify-between gap-3 animate-in slide-in-from-bottom-5 backdrop-blur-md`}
-      >
-        {/* Blocco Icona e Testo */}
+      <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 pt-3 sm:pt-4 pb-0">
+        <div
+          role="region"
+          aria-label="Avviso in evidenza"
+          className={`w-full bg-[#0e1838] text-white p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl shadow-lg border ${theme.containerBorder} flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-md`}
+        >
+          {/* Blocco Icona e Testo */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div
             className={`w-10 h-10 rounded-2xl ${theme.iconBg} border flex items-center justify-center shrink-0 ${theme.iconText} shadow-inner`}
@@ -339,6 +340,7 @@ export const RemoteAnnouncementBanner: React.FC<RemoteAnnouncementBannerProps> =
           )}
         </div>
       </div>
+    </div>
 
       {/* Modale guida installazione PWA se attivata tramite azione pwa_install */}
       <PWAInstallGuideModal

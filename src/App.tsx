@@ -19,6 +19,7 @@ import { openExternalBrowser } from './utils/browserLauncher';
 
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { RemoteAnnouncementBanner } from './components/RemoteAnnouncementBanner';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { CookieConsentModal } from './components/CookieConsentModal';
 import {
   BloggerPost,
@@ -1416,6 +1417,12 @@ export default function App() {
 
         {/* Article Feed Area */}
         <main className="flex-1 overflow-y-auto overscroll-y-contain">
+          {/* Banner di annuncio remoto (GitHub Gist) ancorato sotto la barra del logo e sopra le categorie RSS */}
+          <RemoteAnnouncementBanner
+            onOpenUrl={handleOpenBannerUrl}
+            onOpenArticle={handleOpenBannerArticle}
+          />
+
           <ArticleList
             posts={currentViewPosts}
             totalArchiveArticles={posts.length}
@@ -1580,11 +1587,8 @@ export default function App() {
       {/* PWA Offline indicator */}
       <OfflineIndicator />
 
-      {/* Banner di annuncio remoto (configurabile via GitHub Gist) */}
-      <RemoteAnnouncementBanner
-        onOpenUrl={handleOpenBannerUrl}
-        onOpenArticle={handleOpenBannerArticle}
-      />
+      {/* Banner installazione PWA (riconosce browser e SO) */}
+      <PWAInstallBanner />
 
 
       {/* Cookie Consent Modal / Banner (Informativa sui Cookie) */}

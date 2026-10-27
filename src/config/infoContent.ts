@@ -59,7 +59,7 @@ export const INFO_PAGE_CONTENT = {
     title: 'Registro delle Versioni & Miglioramenti',
     releases: [
       {
-        version: '2.1.0 (attuale)',
+        version: '2.2.1 (attuale)',
         date: 'Ottobre 2026',
         isCurrent: true,
         notes: [
