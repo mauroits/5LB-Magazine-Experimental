@@ -1,6 +1,6 @@
 {
-  "summary":  "Piano di implementazione per la risoluzione definitiva della scadenza delle immagini del feed Accade Oggi (Telegram). Introduce un sistema a doppio livello: proxy e pre-caching persistente su Cloudflare Worker e Cloudflare Edge Cache con memorizzazione binaria in KV Store, riscrittura trasparente degli URL delle immagini in telegram.xml, endpoint di fallback in server.ts per sviluppo locale, e caching offline proattivo tramite Service Worker CacheStorage nella PWA.",
-  "updatedAt":  "2026-10-27T07:51:38.621973392Z",
+  "summary":  "Piano di implementazione per migliorare la grafica e la separazione visiva delle anteprime immagini ricche di testo negli articoli RSS tramite cornice staccata con bordo e sfondo neutro.",
+  "updatedAt":  "2026-10-27T09:01:50.029177265Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

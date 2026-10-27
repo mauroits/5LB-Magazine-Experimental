@@ -508,38 +508,41 @@ export const ArticleList: React.FC<ArticleListProps> = ({
       {/* Grid or Compact List View */}
       {viewMode === 'card' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {displayedPosts.map((post) => (
-            <article
-              key={post.id}
-              onClick={() => onSelectPost(post)}
-              className={`group flex flex-col bg-white dark:bg-slate-900 rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer hover:shadow-lg hover:-translate-y-0.5 ${
-                post.isRead
-                  ? 'border-slate-200 dark:border-slate-800 opacity-90'
-                  : 'border-orange-200/80 dark:border-orange-950/60 shadow-sm ring-1 ring-orange-500/10'
-              }`}
-            >
-              {/* Thumbnail image if available and valid https */}
-              {(() => {
-                const safeThumb = toHttpsUrl(post.thumbnail);
-                if (!safeThumb) return null;
-                return (
-                  <div className="relative aspect-video w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
-                    <img
-                      src={safeThumb}
-                      alt={post.title}
-                      loading="lazy"
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = 'none';
-                      }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+          {displayedPosts.map((post) => {
+            const safeThumb = toHttpsUrl(post.thumbnail);
+            return (
+              <article
+                key={post.id}
+                onClick={() => onSelectPost(post)}
+                className={`group flex flex-col bg-white dark:bg-slate-900 rounded-2xl border transition-all duration-200 overflow-hidden cursor-pointer hover:shadow-lg hover:-translate-y-0.5 ${
+                  post.isRead
+                    ? 'border-slate-200 dark:border-slate-800 opacity-90'
+                    : 'border-orange-200/80 dark:border-orange-950/60 shadow-sm ring-1 ring-orange-500/10'
+                }`}
+              >
+                {/* Thumbnail image in framed inset container if available and valid https */}
+                {safeThumb && (
+                  <div className="thumbnail-frame-wrapper p-3 sm:p-3.5 pb-0">
+                    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700/80 shadow-2xs">
+                      <img
+                        src={safeThumb}
+                        alt={post.title}
+                        loading="lazy"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        onError={(e) => {
+                          const wrapper = (e.target as HTMLElement).closest('.thumbnail-frame-wrapper');
+                          if (wrapper) {
+                            (wrapper as HTMLElement).style.display = 'none';
+                          }
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
                   </div>
-                );
-              })()}
+                )}
 
-              {/* Card Body */}
-              <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between">
+                {/* Card Body */}
+                <div className={`p-4 sm:p-5 ${safeThumb ? 'pt-3 sm:pt-3.5' : ''} flex-1 flex flex-col justify-between`}>
                 <div>
                   {/* Top meta row */}
                   <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
@@ -617,7 +620,8 @@ export const ArticleList: React.FC<ArticleListProps> = ({
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* Compact List View */
