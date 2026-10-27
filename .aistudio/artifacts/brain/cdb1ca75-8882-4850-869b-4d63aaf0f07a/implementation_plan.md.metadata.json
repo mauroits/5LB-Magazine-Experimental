@@ -1,6 +1,6 @@
 {
-  "summary":  "Piano di implementazione per migliorare la grafica e la separazione visiva delle anteprime immagini ricche di testo negli articoli RSS tramite cornice staccata con bordo e sfondo neutro.",
-  "updatedAt":  "2026-10-27T09:01:50.029177265Z",
+  "summary":  "Piano di implementazione per il nuovo banner di comunicazione remoto configurabile tramite GitHub Gist, che sostituisce il precedente banner PWA mantenendone lo stile visivo compatto ed ergonomico, con supporto per link nel browser interno e persistenza della chiusura basata su ID messaggio.",
+  "updatedAt":  "2026-10-27T11:56:14.880858180Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

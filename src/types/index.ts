@@ -51,3 +51,36 @@ export interface NotificationItem {
 export type ActiveFilter =
   | { type: 'quick'; id: 'all' | 'unread' | 'favorites' | 'today' }
   | { type: 'rss'; category: string; label: string };
+
+export type BannerIconType =
+  | 'bell'
+  | 'info'
+  | 'alert'
+  | 'sparkles'
+  | 'download'
+  | 'book'
+  | 'heart'
+  | 'compass'
+  | 'star'
+  | 'smartphone'
+  | 'newspaper';
+
+export type BannerThemeColor = 'blue' | 'amber' | 'emerald' | 'purple' | 'orange';
+
+export interface RemoteBannerAction {
+  label: string;
+  type?: 'link' | 'pwa_install' | 'article';
+  url?: string;
+  openIn?: 'internal' | 'external';
+}
+
+export interface RemoteBannerConfig {
+  enabled: boolean;
+  id: string;
+  title: string;
+  message: string;
+  icon?: BannerIconType;
+  theme?: BannerThemeColor;
+  action?: RemoteBannerAction;
+  canDismiss?: boolean;
+}

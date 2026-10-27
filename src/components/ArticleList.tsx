@@ -11,7 +11,6 @@ import {
   Filter,
   LayoutGrid,
   List,
-  Sparkles,
   X,
   CheckCheck,
   Shuffle,
@@ -24,7 +23,6 @@ import {
 import { BloggerPost, ActiveFilter } from '../types';
 import { formatItalianDate } from '../services/bloggerFeed';
 import { toHttpsUrl } from '../utils/safeUrl';
-import { AI_BANNER_CONFIG } from '../config/infoContent';
 import { ArchiveBadgeButton } from './BadgeIcon';
 import { getCurrentBadge } from '../services/badgeService';
 
@@ -47,7 +45,7 @@ interface ArticleListProps {
   onToggleFavorite: (postId: string, e: React.MouseEvent) => void;
   onToggleRead: (postId: string, e: React.MouseEvent) => void;
   onResetFilter: () => void;
-  onOpenNotebook: () => void;
+  onOpenNotebook?: () => void;
   onMarkAllAsRead?: () => void;
   onOpenBadgesModal?: () => void;
 }
@@ -71,7 +69,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   onToggleFavorite,
   onToggleRead,
   onResetFilter,
-  onOpenNotebook,
   onMarkAllAsRead,
   onOpenBadgesModal,
 }) => {
@@ -103,23 +100,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
   });
 
   const [isShuffleSpinning, setIsShuffleSpinning] = useState(false);
-
-  const [isAiBannerDismissed, setIsAiBannerDismissed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('5lb_dismiss_ai_banner_v1') === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
-
-  const handleDismissAiBanner = () => {
-    setIsAiBannerDismissed(true);
-    try {
-      localStorage.setItem('5lb_dismiss_ai_banner_v1', 'true');
-    } catch (e) {
-      // ignore
-    }
-  };
 
   const handleSelectChronological = () => {
     setSortMode('chronological');
@@ -368,49 +348,6 @@ export const ArticleList: React.FC<ArticleListProps> = ({
           </div>
         </div>
       </div>
-
-      {/* AI banner highlight (Dismissible) */}
-      {!isAiBannerDismissed && (
-        <div className="relative mb-6 rounded-2xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-purple-900/40 border border-blue-500/20 p-4 pr-11 flex flex-col gap-3 shadow-xs">
-          {/* Dismiss button */}
-          <button
-            onClick={handleDismissAiBanner}
-            className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-black/10 dark:hover:bg-white/10 transition cursor-pointer"
-            title="Chiudi banner IA"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          {/* Scritta 'Ricerca semantica' centrata */}
-          <div className="w-full flex justify-center">
-            <span className="text-[10px] uppercase font-bold tracking-wider bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 px-3 py-0.5 rounded-full inline-flex items-center justify-center text-center shadow-xs">
-              {AI_BANNER_CONFIG.badge}
-            </span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-md">
-                <Sparkles className="w-5 h-5 text-amber-300" />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {AI_BANNER_CONFIG.title}
-                </h4>
-                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                  {AI_BANNER_CONFIG.description}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onOpenNotebook}
-              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition active:scale-95 shrink-0 self-end sm:self-auto cursor-pointer"
-            >
-              {AI_BANNER_CONFIG.buttonText}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Empty / Error State */}
       {displayedPosts.length === 0 && !isLoading && (() => {

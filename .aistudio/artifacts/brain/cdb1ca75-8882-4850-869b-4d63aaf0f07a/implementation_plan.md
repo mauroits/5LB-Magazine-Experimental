@@ -1,86 +1,134 @@
-# Restyling Grafico Anteprime Immagini RSS: Cornice Staccata e Separazione Visiva
+# Banner di Comunicazione Remoto con GitHub Gist
 
-Ridisegno della presentazione grafica delle immagini di anteprima nei post RSS per eliminare la confusione visiva tra il testo incorporato nelle immagini grafiche/social e il testo nativo dell'articolo.
+Piano di implementazione per sostituire l'attuale banner PWA con un banner di comunicazione gestibile da remoto dal programmatore tramite un file JSON su GitHub Gist, con apertura dei link nel browser interno dell'app, persistenza della chiusura per ID messaggio e styling coerente con l'interfaccia 5LB Magazine.
 
-### User Review & Critical Decisions
+## User Review & Critical Decisions
 
-> [!IMPORTANT] Scelte confermate nella fase di chiarimento:
-> - **Stile grafico di separazione**: Cornice staccata con bordo perimetrale e sfondo neutro (passe-partout), che isola l'immagine dai testi della scheda impedendo la fusione visiva dei contenuti con sfondo chiaro.
-> - **Controllo visualizzazione**: Nessun toggle aggiuntivo necessario; si fa affidamento sulla vista compatta già disponibile per gli utenti che desiderano una lettura puramente testuale.
+> [!IMPORTANT]
+> Decisioni confermate nella fase di chiarimento:
+> - **Sorgente remota**: GitHub Gist pubblico con URL `raw` per aggiornamenti istantanei senza ridistribuzione del codice.
+> - **Comportamento di chiusura**: Quando l'utente preme la "X", il banner viene nascosto in modo permanente per quello specifico messaggio; ricompare solo se viene impostato un nuovo `id` messaggio nel Gist.
+> - **Rapporto col banner PWA**: Il nuovo banner sostituisce il banner PWA esistente, adottandone lo stesso ingombro, posizionamento ed estetica, offrendo piena configurabilità remota (incluso un tipo di azione opzionale per l'installazione PWA se desiderato).
 
-- **Confermato**: Inset frame con raggio di curvatura proporzionato (`rounded-xl` all'interno di scheda `rounded-2xl`), sfondo neutro passe-partout (`bg-slate-100/90 dark:bg-slate-800/80`), bordo sottile perimetrale e sottile divisore tra cornice e corpo dell'articolo.
-- **Miglioramento accessorio consigliato**: Aggiunta di un discreto indicatore visivo di media (icona immagine o badge opaco minimale) e rifinitura dello stile per le immagini interne al modale di lettura.
-
----
-
-### 1. Panoramica & Obiettivo
-
-Nelle schede degli articoli RSS (in particolare post provenienti da social o aggregatori con grafiche e banner di testo), l'immagine di anteprima include spesso titoli, sottotitoli e pulsanti grafici su sfondo bianco. Quando l'immagine viene visualizzata a pieno formato a filo ("full bleed") sopra il testo della scheda, i caratteri dell'immagine si fondono direttamente con il titolo e l'anteprima dell'articolo, creando un effetto sgradevole di "doppio titolo" e disorientamento per il lettore.
-
-La soluzione introduce una **cornice staccata a passe-partout**:
-1. L'immagine non tocca più i bordi esterni della card ma è inserita con un padding dedicato (`p-3 sm:p-3.5 pb-0`).
-2. Viene racchiusa in un contenitore sagomato con bordo ben definito (`border border-slate-200/90 dark:border-slate-800`), raggio arrotondato coerente e sfondo opaco/neutro (`bg-slate-100 dark:bg-slate-800/80`).
-3. Una linea di stacco o spaziatura bilanciata separa nettamente la cornice dal corpo del testo (data, stato lettura, titolo e sommario).
-4. La transizione hover si applica in modo controllato all'interno della cornice senza strabordare.
+- **Gestione Link**: I link impostati nel banner supporteranno sia articoli interni del Magazine (aperti istantaneamente nella modale articolo nativa) sia URL web esterni (aperti nel browser/modalità interna protetta con fallback esterno).
+- **Resilienza e Cache**: Interrogazione HTTP non bloccante con timestamp di cache-busting a 2 minuti e fallback in `localStorage` per garantire la lettura anche offline o in assenza di rete.
 
 ---
 
-### 2. User Experience & Visual Design
+## 1. Overview & Core Concept
 
-#### Struttura della Scheda con Cornice Staccata
+Il banner di comunicazione remoto consente al programmatore di comunicare in tempo reale con tutti gli utenti dell'applicazione (notizie, avvisi di manutenzione, eventi, nuovi corsi, aggiornamenti dell'app o suggerimenti di installazione) semplicemente modificando un piccolo file JSON ospitato su un proprio GitHub Gist.
+
+### Funzionalità Chiave:
+1. **Attivazione / Disattivazione da remoto**: Un booleano `enabled` nel JSON accende o spegne il banner per tutti i client.
+2. **Personalizzazione Completa del Messaggio**:
+   - Titolo, testo descrittivo e icona tematica selezionabile (`bell`, `info`, `alert`, `sparkles`, `download`, `book`, `heart`, `compass`, `star`).
+   - Tema cromatico discreto (`blue`, `amber`, `emerald`, `purple`, `orange`).
+3. **Pulsante di Azione Interattivo**:
+   - Etichetta personalizzata (es. *"Scopri di più"*, *"Leggi articolo"*, *"Installa App"*).
+   - Destinazione link con apertura nel browser interno / lettore dell'applicazione.
+   - Azione speciale `"pwa_install"` nel caso in cui il programmatore desideri usare il banner come invito all'installazione dell'app.
+4. **Chiusura Intelligente per ID**:
+   - L'utente può chiudere il banner con la "X".
+   - La scelta viene memorizzata associata all'ID del messaggio (`id: "avviso-2026-10-27"`). Finché l'ID non cambia, il banner non disturba l'utente. Quando il programmatore pubblica una nuova comunicazione con un nuovo ID, il banner si riattiva automaticamente.
+
+---
+
+## 2. User Experience & Visual Design
+
+Il banner si adatta perfettamente alle linee guida ergonomiche mobile e al design dark navy `#0e1838` dell'app 5LB Magazine:
+
+- **Posizionamento Ergonomico**:
+  - Ancorato in basso a destra su desktop (`bottom-4 right-4 max-w-md`), o a tutta larghezza con margini su mobile (`bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-3 right-3`).
+  - Rispetta il limite del 15% di occupazione verticale dello schermo per non ostacolare la lettura degli articoli.
+- **Micro-interazioni & Animazioni**:
+  - Comparsa morbida dal basso (`slide-in-from-bottom-4 fade-in duration-200`).
+  - Feedback tattile sui pulsanti (`active:scale-95`).
+- **Anatomia del Componente**:
+  - **Sinistra**: Icona in contenitore `rounded-2xl` con sfondo semitrasparente e bordo coordinato.
+  - **Centro**: Titolo leggibile a singolo rigo (`text-xs sm:text-sm font-bold text-white truncate`) e messaggio sintetico a 1-2 righe (`text-[11px] text-slate-300`).
+  - **Destra**: Pulsante CTA con gradiente a contrasto + icona "X" con hitbox accessibile (minimo 44px).
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **GitHub Gist vs Cloudflare Worker / Backend**:
+  - *Scelta*: GitHub Gist Raw.
+  - *Motivazione*: Zero costi, zero server da mantenere, modificabile istantaneamente da qualsiasi dispositivo (anche smartphone) tramite web o app GitHub senza dover configurare token o chiavi di deployment.
+- **Gestione Cache del CDN GitHub Raw**:
+  - *Scelta*: Chiamata con parametro timestamp calcolato su finestra di 2 minuti (`?t=${Math.floor(Date.now() / 120000)}`) e header `cache: 'no-cache'`.
+  - *Motivazione*: I link `gist.githubusercontent.com/.../raw` possono avere una cache CDN di alcuni minuti; il time-rounding assicura aggiornamenti rapidi senza sovraccaricare la rete a ogni ri-render.
+- **Apertura Link Interni ed Esterni**:
+  - *Scelta*: Riconoscimento intelligente dell'URL:
+    1. Se l'URL punta a un articolo del Magazine (`magazine.5lb.eu` o percorso interno), viene aperto direttamente nella vista modale nativa dell'articolo (`ArticleModal`).
+    2. Se è un link web generico, viene visualizzato nel visualizzatore in-app dedicato con barra strumenti e opzione di apertura esterna.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
+### Component & Data Flow Diagram
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│  Card (bg-white / dark:bg-slate-900, rounded-2xl)       │
-│                                                        │
-│  ┌──────────────────────────────────────────────────┐  │ <- Inset container (padding 12px/14px)
-│  │ Framed Media Preview (rounded-xl, border, matte) │  │
-│  │                                                  │  │
-│  │        [ Immagine / Banner con testo ]           │  │
-│  │                                                  │  │
-│  └──────────────────────────────────────────────────┘  │
-│  ────────────────────────────────────────────────────  │ <- Separatore o margine di stacco
-│                                                        │
-│   🟠 31 Ott 2025                             [○] [♡]   │ <- Meta bar articolo
-│   Titolo dell'Articolo (Ben distinto e leggibile)      │ <- Titolo nativo
-│   Sommario del post...                                 │
-│                                                        │
-│   [CATEGORIA 1] [CATEGORIA 2]                          │
-└────────────────────────────────────────────────────────┘
+│                   GitHub Gist                          │
+│  (https://gist.githubusercontent.com/.../raw/...)      │
+│  { enabled, id, title, message, icon, action, theme }  │
+└───────────────────────────┬────────────────────────────┘
+                            │ (fetch con polling/swr & cache-busting)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│             remoteBannerService.ts                     │
+│  - fetchRemoteBannerConfig()                           │
+│  - getDismissedBannerId() / dismissBanner(id)          │
+│  - Fallback a configurazione locale di sicurezza       │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│              <RemoteAnnouncementBanner />              │
+│  - Sostituisce <PWAInstallBanner />                    │
+│  - Gestisce stato visibilità e chiusura utente         │
+│  - Intercetta click su action/link                     │
+└──────────────┬──────────────────────────┬──────────────┘
+               │                          │
+        (Link Articolo)             (Link Esterno / Altro)
+               ▼                          ▼
+    ┌────────────────────┐     ┌──────────────────────┐
+    │   <ArticleModal>   │     │  Browser In-App      │
+    │   (Viewer nativo)  │     │  o System Browser    │
+    └────────────────────┘     └──────────────────────┘
 ```
 
-#### Palette e Token Visivi
-- **Sfondo cornice (Passe-partout)**: `bg-slate-100/90 dark:bg-slate-800/80` (crea contrasto immediato anche con grafiche a sfondo bianco puro o trasparente).
-- **Bordo cornice**: `border border-slate-200/90 dark:border-slate-700/80` con sottile anello `ring-1 ring-black/5 dark:ring-white/5`.
-- **Raggio di curvatura (Spatial math)**: Card esterna `rounded-2xl` (16px), Frame interno `rounded-xl` (12px) per un'armonia geometrica impeccabile ($r_{\text{inner}} = r_{\text{outer}} - \text{padding}$).
-- **Trattamento Hover**: Zoom delicato e controllato dell'immagine (`group-hover:scale-[1.03]`) contenuto rigidamente all'interno della cornice (`overflow-hidden`).
+### Struttura Schema JSON del Gist (`banner.json`)
 
----
+```json
+{
+  "enabled": true,
+  "id": "annuncio-2026-v1",
+  "title": "Nuovo aggiornamento Magazine",
+  "message": "Esplora i nuovi articoli e le funzioni offline aggiornate.",
+  "icon": "bell",
+  "theme": "blue",
+  "action": {
+    "label": "Scopri",
+    "type": "link",
+    "url": "https://magazine.5lb.eu/..."
+  },
+  "canDismiss": true
+}
+```
 
-### 3. Decisioni Chiave di Prodotto & Dettagli Tecnici
-
-#### Decisione 1: Inset Frame vs Full-Bleed
-- **Scelta**: Inserimento dell'immagine all'interno di una cornice staccata con padding e sfondo neutro.
-- **Motivazione**: Risolve alla radice il problema mostrato nello screenshot dell'utente, dove un'infografica bianca si confonde con lo sfondo bianco della card e sembra far parte del testo nativo.
-- **Alternativa scartata**: Layout orizzontale forzato (scartato dall'utente per preservare la densità e il formato a griglia).
-
-#### Decisione 2: Nessun Toggle Aggiuntivo nel Toolbar
-- **Scelta**: Mantenimento dell'attuale commutatore Griglia/Compatto (`viewMode === 'card' ? ... : ...`).
-- **Motivazione**: Conforme alla risposta dell'utente ("Solo tramite la vista elenco compatta gia esistente"). Evita di appesantire la barra degli strumenti con interruttori superflui.
-
-#### Decisione 3: Armonizzazione nel Modale Articolo
-- **Scelta**: Applicazione di un trattamento coerente (bordo sottile, sfondo neutro e raggio sagomato) anche per le immagini e figure contenute nel corpo degli articoli dentro `ArticleModal.tsx`.
-
----
-
-### 4. Piano di Esecuzione delle Modifiche
-
-1. **Aggiornamento di `src/components/ArticleList.tsx`**:
-   - Modificare il rendering del thumbnail della vista scheda (`viewMode === 'card'`):
-     - Aggiungere il wrapper esterno con padding (`p-3 sm:p-3.5 pb-0`).
-     - Applicare il contenitore cornice con `rounded-xl`, bordo neutro (`border border-slate-200/90 dark:border-slate-800`), sfondo matte (`bg-slate-100/90 dark:bg-slate-800/80`) e `shadow-2xs`.
-     - Regolare la spaziatura superiore del corpo card (`p-4 sm:p-5 pt-3 sm:pt-4`) per un bilanciamento armonioso dello spazio verticale.
-2. **Aggiornamento di `src/components/ArticleModal.tsx`**:
-   - Assicurare che le immagini incorporate nell'HTML abbiano un bordo leggero e uno sfondo neutro di sicurezza per evitare fusioni di testo identiche nel corpo di lettura (`[&_img]:border [&_img]:border-slate-200 dark:[&_img]:border-slate-800 [&_img]:bg-slate-50 dark:[&_img]:bg-slate-900/40`).
-3. **Verifica & Compilazione**:
-   - Eseguire `compile_applet` e validare l'integrità del build.
+### File e Modifiche Previste:
+1. `src/config/remoteBannerConfig.ts`:
+   - Definizione dell'URL Gist predefinito (facilmente sostituibile dal programmatore).
+   - Configurazione di fallback e opzioni di polling / cache.
+2. `src/services/remoteBannerService.ts`:
+   - Fetching asincrono con gestione errori, validazione JSON, gestione `localStorage` per l'ID chiuso.
+3. `src/components/RemoteAnnouncementBanner.tsx`:
+   - Componente UI che sostituisce `PWAInstallBanner`, renderizzando il banner con la medesima accuratezza estetica e supporto per tutte le icone e tipi di azione.
+4. `src/components/InAppBrowserModal.tsx` (o integrazione con `browserLauncher`):
+   - Visualizzatore sicuro in-app per link esterni con pulsanti di navigazione, chiusura e apertura esterna.
+5. `src/App.tsx`:
+   - Sostituzione di `PWAInstallBanner` con `RemoteAnnouncementBanner`.

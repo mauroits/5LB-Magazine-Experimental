@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "id": "annuncio-2026-v1",
+  "title": "5LB Magazine News",
+  "message": "Benvenuto nella nuova versione! Aggiungi l'app alla schermata Home per leggere gli articoli anche offline.",
+  "icon": "bell",
+  "theme": "blue",
+  "action": {
+    "label": "Installa App",
+    "type": "pwa_install"
+  },
+  "canDismiss": true
+}

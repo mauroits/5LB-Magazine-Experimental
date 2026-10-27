@@ -18,7 +18,8 @@ import { openExternalBrowser } from './utils/browserLauncher';
 
 
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { RemoteAnnouncementBanner } from './components/RemoteAnnouncementBanner';
+import { InAppBrowserModal } from './components/InAppBrowserModal';
 import { CookieConsentModal } from './components/CookieConsentModal';
 import {
   BloggerPost,
@@ -175,6 +176,10 @@ export default function App() {
   // Link interception popup state for magazine.5lb.eu links
   const [promptArticleUrl, setPromptArticleUrl] = useState<string | null>(null);
   const [isDownloadingArticle, setIsDownloadingArticle] = useState(false);
+
+  // In-App browser modal state for external links from banner
+  const [inAppBrowserUrl, setInAppBrowserUrl] = useState<string | null>(null);
+  const [inAppBrowserTitle, setInAppBrowserTitle] = useState<string>("");
 
   // Active in-app Toast Notification
   const [toastNotification, setToastNotification] = useState<NotificationItem | null>(null);
@@ -1259,6 +1264,42 @@ export default function App() {
     [isAppInstalled]
   );
 
+  // Handler per aprire link dal banner remoto:
+  // Se è un articolo di 5LB, lo apre nel visualizzatore nativo; altrimenti apre il browser interno in-app
+  const handleOpenBannerUrl = useCallback(
+    (url: string) => {
+      if (!url) return;
+      if (isMagazineUrl(url)) {
+        const match = findPostByUrl(url, posts);
+        if (match) {
+          handleSelectPost(match);
+          return;
+        }
+        handleInterceptArticleLink(url);
+        return;
+      }
+      setInAppBrowserTitle("5LB Magazine");
+      setInAppBrowserUrl(url);
+    },
+    [posts, handleSelectPost, handleInterceptArticleLink]
+  );
+
+  const handleOpenBannerArticle = useCallback(
+    (urlOrId: string) => {
+      if (!urlOrId) return;
+      const match =
+        posts.find((p) => p.id === urlOrId || p.link === urlOrId) ||
+        accadeOggiPosts.find((p) => p.id === urlOrId || p.link === urlOrId) ||
+        findPostByUrl(urlOrId, posts);
+      if (match) {
+        handleSelectPost(match);
+      } else {
+        handleInterceptArticleLink(urlOrId);
+      }
+    },
+    [posts, accadeOggiPosts, handleSelectPost, handleInterceptArticleLink]
+  );
+
   // Handler for downloading / updating an article from a magazine.5lb.eu URL into local archive
   // Segna automaticamente l'articolo nella categoria "Salva per dopo" (isFavorite: true)
   const handleDownloadArticleByUrl = useCallback(
@@ -1544,8 +1585,19 @@ export default function App() {
       {/* PWA Offline indicator */}
       <OfflineIndicator />
 
-      {/* Proactive PWA Install Banner */}
-      <PWAInstallBanner />
+      {/* Banner di annuncio remoto (configurabile via GitHub Gist) */}
+      <RemoteAnnouncementBanner
+        onOpenUrl={handleOpenBannerUrl}
+        onOpenArticle={handleOpenBannerArticle}
+      />
+
+      {/* Visualizzatore Web In-App per link esterni */}
+      <InAppBrowserModal
+        isOpen={Boolean(inAppBrowserUrl)}
+        url={inAppBrowserUrl}
+        title={inAppBrowserTitle}
+        onClose={() => setInAppBrowserUrl(null)}
+      />
 
       {/* Cookie Consent Modal / Banner (Informativa sui Cookie) */}
       <CookieConsentModal
