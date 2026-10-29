@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Estratto da inserire all'interno del tag <application>
+    nel file app/src/main/AndroidManifest.xml del progetto TWA / PWABuilder
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!-- ======================================================== -->
+        <!-- WIDGET 1: Ticker Ultime Notizie (1x4 con ViewFlipper)     -->
+        <!-- ======================================================== -->
+        <receiver
+            android:name=".widget.NewsTickerWidgetProvider"
+            android:label="5LB Magazine - Ticker Notizie"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="eu.five_lb.magazine.ACTION_REFRESH_NEWS" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_news_ticker_info" />
+        </receiver>
+
+        <!-- Activity opzionale di configurazione del widget Ticker -->
+        <activity
+            android:name=".widget.NewsWidgetConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.MaterialComponents.DayNight.Dialog">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- ======================================================== -->
+        <!-- WIDGET 2: Barra Eziologia 1x4 (con BottomSheet nativo)   -->
+        <!-- ======================================================== -->
+        <receiver
+            android:name=".widget.EtiologyBarWidgetProvider"
+            android:label="5LB Magazine - Eziologia"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_etiology_bar_info" />
+        </receiver>
+
+        <!-- Activity con tema trasparente / dialog che mostra il BottomSheet nativo delle 14 categorie -->
+        <activity
+            android:name=".widget.EtiologyBottomSheetActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Design.BottomSheetDialog"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
+    </application>
+
+</manifest>

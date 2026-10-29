@@ -1,0 +1,6 @@
+{
+  "summary":  "Piano di implementazione revisionato per i Widget Nativi Android Home Screen (TWA / PWABuilder) di 5LB Magazine:\n1. Widget 1 (News Ticker 1x4): ViewFlipper con transizione automatica ogni 4-5s (nessun marquee instabile), feed di default 'Ultime notizie' ordinate per pubblicazione, aggiornamento periodico ogni 2 ore, deep-link diretto all'articolo al tocco.\n2. Widget 2 (Eziologia 1x4): Barra compatta che al tocco apre un BottomSheetDialogFragment nativo con lista a scorrimento di tutte le 14 categorie, chiusura e lancio immediato della TWA sul deep-link selezionato.\n3. Supporto deep-linking esteso nel router di App.tsx e endpoint JSON ultraleggeri in server.ts.\n4. Modulo documentazione, simulatore grafico live e generatore di codice Android completo (Kotlin + XML) per il wrapper TWA.",
+  "updatedAt":  "2026-10-28T08:42:47.077644518Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

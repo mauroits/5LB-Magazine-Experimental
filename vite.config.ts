@@ -60,18 +60,26 @@ export default defineConfig(() => {
           'apple-touch-icon.png',
           'pwa-192x192.png',
           'pwa-512x512.png',
+          'pwa-maskable-512x512.png',
           'logo-faviconBLU.png',
           'logoBLU_APP.jpg',
           'sw-sync.js',
+          'screenshots/screenshot-mobile.png',
+          'screenshots/screenshot-desktop.png',
         ],
         manifest: {
           id: base,
           name: '5LB Magazine - La rivista sulle 5 Leggi Biologiche',
           short_name: '5LB Magazine',
-          description: 'App ufficiale di 5LB Magazine con risorse formative e informative.',
+          description: 'App ufficiale di 5LB Magazine con risorse formative e informative sulle 5 Leggi Biologiche.',
+          lang: 'it',
+          dir: 'ltr',
+          orientation: 'any',
+          categories: ['news', 'magazines', 'education', 'health'],
           theme_color: '#000836',
           background_color: '#000836',
           display: 'standalone',
+          display_override: ['standalone', 'window-controls-overlay'],
           start_url: base,
           scope: base,
           icons: [
@@ -94,6 +102,66 @@ export default defineConfig(() => {
               purpose: 'maskable',
             },
           ],
+          screenshots: [
+            {
+              src: `${base}screenshots/screenshot-mobile.png`,
+              sizes: '750x1334',
+              type: 'image/png',
+              form_factor: 'narrow',
+              label: '5LB Magazine su smartphone - Articoli e rubriche biologiche',
+            },
+            {
+              src: `${base}screenshots/screenshot-desktop.png`,
+              sizes: '1280x720',
+              type: 'image/png',
+              form_factor: 'wide',
+              label: '5LB Magazine su desktop e tablet - Griglia articoli e archivio',
+            },
+          ],
+          shortcuts: [
+            {
+              name: 'Il mio archivio',
+              short_name: 'Archivio',
+              description: 'Esplora tutti gli articoli e le risorse salvate nella rivista',
+              url: `${base}?tab=archive`,
+              icons: [
+                {
+                  src: `${base}pwa-192x192.png`,
+                  sizes: '192x192',
+                  type: 'image/png',
+                },
+              ],
+            },
+            {
+              name: 'Ultimi Articoli',
+              short_name: 'Novità',
+              description: 'Leggi le ultime novità e pubblicazioni sulla rivista',
+              url: `${base}?tab=latest`,
+              icons: [
+                {
+                  src: `${base}pwa-192x192.png`,
+                  sizes: '192x192',
+                  type: 'image/png',
+                },
+              ],
+            },
+            {
+              name: 'Cerca nella Rivista',
+              short_name: 'Cerca',
+              description: 'Cerca articoli e temi sulle 5 Leggi Biologiche',
+              url: `${base}?action=search`,
+              icons: [
+                {
+                  src: `${base}pwa-192x192.png`,
+                  sizes: '192x192',
+                  type: 'image/png',
+                },
+              ],
+            },
+          ],
+          launch_handler: {
+            client_mode: ['navigate-existing', 'auto'],
+          },
           protocol_handlers: [
             {
               protocol: 'web+magazinelb',

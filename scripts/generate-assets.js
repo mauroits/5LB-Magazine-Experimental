@@ -137,4 +137,12 @@ const svgIcon = `<svg xmlns="http://www.w3.org/2005/svg" viewBox="0 0 512 512">
 fs.writeFileSync(path.join(publicDir, 'icon.svg'), svgIcon);
 fs.writeFileSync(path.join(publicDir, 'favicon.ico'), appleTouchIcon);
 
+// Run screenshot generator
+try {
+  const { execSync } = await import('child_process');
+  execSync('node scripts/generate-screenshots.js', { stdio: 'inherit' });
+} catch (e) {
+  console.warn('Screenshot generation notice:', e.message);
+}
+
 console.log('All PWA assets successfully generated in /public!');

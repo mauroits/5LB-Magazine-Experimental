@@ -14,12 +14,32 @@ import {
   RefreshCw,
   Check,
   Cookie,
-  Award
+  Award,
+  Smartphone,
+  Settings
 } from 'lucide-react';
 import { Logo5LB } from './Logo5LB';
 import { INFO_PAGE_CONTENT } from '../config/infoContent';
 import { BADGE_TIERS } from '../services/badgeService';
 import { BadgeTierIcon } from './BadgeIcon';
+import { BloggerPost } from '../types';
+
+const ETIOLOGY_CATEGORIES = [
+  { id: 'ezio-respiratorie', label: 'Vie respiratorie', emoji: '🫁', desc: 'Laringe, bronchi, polmoni', rss: 'C: vie respiratorie' },
+  { id: 'ezio-bocca', label: 'Cavità orale', emoji: '👄', desc: 'Denti, lingua, gengive', rss: 'C: bocca' },
+  { id: 'ezio-seno', label: 'Seno', emoji: '🩺', desc: 'Ghiandole mammarie, dotti galattofori', rss: 'C: seno' },
+  { id: 'ezio-gastro', label: 'App. gastro-intestinale', emoji: '🍽️', desc: 'Stomaco, fegato, intestino', rss: 'C: intestino' },
+  { id: 'ezio-cardio', label: 'App. cardio-circolatorio', emoji: '🫀', desc: 'Cuore, vasi, coronarie', rss: 'C: sistema circolatorio' },
+  { id: 'ezio-urinario', label: 'Apparato urinario', emoji: '💧', desc: 'Reni, vescica, dotti escretori', rss: 'C: apparato urinario' },
+  { id: 'ezio-genitale', label: 'Apparato genitale', emoji: '🧬', desc: 'Utero, prostata, ovaie, testicoli', rss: 'C: apparato genitale' },
+  { id: 'ezio-muscolo', label: 'App. muscolo-scheletrico', emoji: '🦴', desc: 'Ossa, muscoli, articolazioni', rss: 'C: apparato muscolo-scheletrico' },
+  { id: 'ezio-pelle', label: 'La pelle', emoji: '🖐️', desc: 'Epidermide, corion, derma', rss: 'C: pelle' },
+  { id: 'ezio-nervoso', label: 'Sistema nervoso', emoji: '🧠', desc: 'Cervello, motricità, sensibilità', rss: 'C: sistema nervoso' },
+  { id: 'ezio-sensi', label: 'Vista, udito, olfatto', emoji: '👁️', desc: 'Occhi, orecchie, naso', rss: 'C: sistema vis olf uditivo' },
+  { id: 'ezio-allergie', label: 'Intolleranze e allergie', emoji: '🌿', desc: 'Reazioni e binari biologici', rss: 'D: intolleranze' },
+  { id: 'ezio-psicosi', label: 'Psicosi', emoji: '⚡', desc: 'Costellazioni biologiche', rss: 'COSTELLAZIONI' },
+  { id: 'ezio-lateralita', label: 'La lateralità', emoji: '⚖️', desc: 'Mancino o destrimane', rss: 'MANCINO' },
+];
 
 interface InfoModalProps {
   isOpen: boolean;
@@ -27,6 +47,10 @@ interface InfoModalProps {
   onRefreshFeed?: () => void;
   isRefreshing?: boolean;
   onOpenCookieSettings?: () => void;
+  posts?: BloggerPost[];
+  onSelectPost?: (post: BloggerPost) => void;
+  onSelectCategory?: (categoryId: string) => void;
+  defaultTab?: 'funzioni' | 'aggiornamenti' | 'contatti' | 'privacy' | 'widget';
 }
 
 export const InfoModal: React.FC<InfoModalProps> = ({
@@ -35,9 +59,35 @@ export const InfoModal: React.FC<InfoModalProps> = ({
   onRefreshFeed,
   isRefreshing = false,
   onOpenCookieSettings,
+  posts = [],
+  onSelectPost,
+  onSelectCategory,
+  defaultTab = 'funzioni',
 }) => {
-  const [activeTab, setActiveTab] = useState<'funzioni' | 'aggiornamenti' | 'contatti' | 'privacy'>('funzioni');
+  const [activeTab, setActiveTab] = useState<'funzioni' | 'aggiornamenti' | 'contatti' | 'privacy' | 'widget'>(defaultTab);
   const [refreshDone, setRefreshDone] = useState(false);
+
+  // State for live widget simulator
+  const [newsFeedType, setNewsFeedType] = useState<'latest' | 'archive'>('latest');
+  const [currentArticleIndex, setCurrentArticleIndex] = useState(0);
+  const [isSimulatorBottomSheetOpen, setIsSimulatorBottomSheetOpen] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+
+  React.useEffect(() => {
+    if (defaultTab) {
+      setActiveTab(defaultTab);
+    }
+  }, [defaultTab, isOpen]);
+
+  // Rotate simulator news every 4.5 seconds
+  const activePosts = posts.slice(0, 6);
+  React.useEffect(() => {
+    if (activePosts.length === 0 || isPaused || activeTab !== 'widget') return;
+    const timer = setInterval(() => {
+      setCurrentArticleIndex((prev) => (prev + 1) % activePosts.length);
+    }, 4500);
+    return () => clearInterval(timer);
+  }, [activePosts.length, isPaused, activeTab]);
 
   if (!isOpen) return null;
 
@@ -80,6 +130,7 @@ export const InfoModal: React.FC<InfoModalProps> = ({
         <div className="bg-slate-100 dark:bg-slate-800/80 px-4 py-2 border-b border-slate-200 dark:border-slate-700/80 flex gap-1.5 overflow-x-auto scrollbar-none shrink-0">
           {[
             { id: 'funzioni', label: 'Funzioni App', icon: BookOpen },
+            { id: 'widget', label: 'Widget Home Android', icon: Smartphone },
             { id: 'aggiornamenti', label: 'Ultimi Aggiornamenti', icon: History },
             { id: 'contatti', label: 'Contatti', icon: Mail },
             { id: 'privacy', label: 'Privacy & Note Legali', icon: Shield },
@@ -327,6 +378,242 @@ export const InfoModal: React.FC<InfoModalProps> = ({
                     <span>Leggi la Privacy Policy completa sul portale 5lb.eu</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'widget' && (
+            <div className="space-y-5 animate-in fade-in-50">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Smartphone className="w-5 h-5 text-sky-500" />
+                    Simulatore Widget Home Screen Android
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    Anteprima interattiva dei due widget nativi (1x4) per il launcher Android. Toccali per provarli.
+                  </p>
+                </div>
+              </div>
+
+              {/* Launcher Mockup */}
+              <div className="relative mx-auto max-w-sm rounded-[32px] border-[5px] border-slate-700 dark:border-slate-800 bg-[#090d16] p-4 text-white shadow-2xl overflow-hidden min-h-[480px] flex flex-col justify-between select-none">
+                {/* Android Status Bar */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pb-2 border-b border-white/5">
+                  <span>12:00</span>
+                  <div className="flex items-center gap-1.5">
+                    <span>5G</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+
+                {/* Google Search Bar Mock */}
+                <div className="mt-2 bg-white/10 rounded-full py-1.5 px-3 flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white">G</span>
+                    <span className="text-[11px]">Cerca sul web...</span>
+                  </div>
+                  <span className="text-xs">🎙️</span>
+                </div>
+
+                {/* --- WIDGET 1: NEWS TICKER --- */}
+                <div className="mt-3">
+                  <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-between font-mono">
+                    <span>WIDGET 1: TICKER NOTIZIE (1x4)</span>
+                    <button
+                      onClick={() => setIsPaused(!isPaused)}
+                      className="text-sky-400 hover:underline cursor-pointer"
+                    >
+                      {isPaused ? '▶ Riprendi' : '⏸ Pausa'}
+                    </button>
+                  </div>
+
+                  <div
+                    onMouseEnter={() => setIsPaused(true)}
+                    onMouseLeave={() => setIsPaused(false)}
+                    className="w-full bg-[#000836] border border-blue-900/60 rounded-2xl p-2.5 shadow-lg flex items-center gap-2 hover:border-sky-500 transition cursor-pointer"
+                  >
+                    {/* Logo originale 5LB + Badge */}
+                    <div className="flex items-center gap-1.5 shrink-0 pl-0.5">
+                      <Logo5LB className="h-4.5 sm:h-5" />
+                      <div className="w-[1px] h-3.5 bg-slate-700" />
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">
+                        {newsFeedType === 'archive' ? 'Archivio' : 'Ultime'}
+                      </span>
+                    </div>
+
+                    {/* ViewFlipper Container */}
+                    <div
+                      onClick={() => {
+                        const post = activePosts[currentArticleIndex];
+                        if (post && onSelectPost) {
+                          onSelectPost(post);
+                          onClose();
+                        }
+                      }}
+                      className="flex-1 min-w-0 pr-1 group"
+                      title="Tocca per aprire l'articolo"
+                    >
+                      {activePosts[currentArticleIndex] ? (
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                          <p className="text-xs font-semibold text-white truncate group-hover:text-sky-300 transition-colors">
+                            {activePosts[currentArticleIndex].title}
+                          </p>
+                          <p className="text-[10px] text-sky-300/80 truncate">
+                            {activePosts[currentArticleIndex].categories?.[0] || 'Notizie'} · Tocca per leggere
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 truncate">
+                          Caricamento ultime notizie 5LB...
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Feed switch button */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNewsFeedType(newsFeedType === 'latest' ? 'archive' : 'latest');
+                        }}
+                        className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                        title="Cambia feed (Ultime / Archivio)"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Launcher Icons Mock */}
+                <div className="grid grid-cols-4 gap-3 my-3 py-2">
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-900 flex items-center justify-center p-1 shadow-md">
+                      <Logo5LB className="h-5" />
+                    </div>
+                    <span className="text-[10px] text-slate-300">Magazine</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-sm shadow-md">
+                      📞
+                    </div>
+                    <span className="text-[10px] text-slate-300">Telefono</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-500 flex items-center justify-center text-sm shadow-md">
+                      ✈️
+                    </div>
+                    <span className="text-[10px] text-slate-300">Telegram</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-600 flex items-center justify-center text-sm shadow-md">
+                      🧭
+                    </div>
+                    <span className="text-[10px] text-slate-300">Chrome</span>
+                  </div>
+                </div>
+
+                {/* --- WIDGET 2: EZIOLOGIA BAR --- */}
+                <div className="mt-1 mb-3">
+                  <div className="text-[10px] text-slate-400 mb-1 flex items-center justify-between font-mono">
+                    <span>WIDGET 2: BARRA EZIOLOGIA (1x4)</span>
+                    <span className="text-[9px] text-emerald-400">● 14 Apparati</span>
+                  </div>
+
+                  <div
+                    onClick={() => setIsSimulatorBottomSheetOpen(true)}
+                    className="w-full bg-[#000836] border border-blue-900/60 rounded-2xl p-2.5 shadow-lg flex items-center gap-2.5 hover:border-sky-400 hover:scale-[1.01] active:scale-[0.99] transition cursor-pointer"
+                  >
+                    <span className="text-xl shrink-0">🫁</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-sky-400 tracking-wide">
+                        EZIOLOGIA · 5LB
+                      </p>
+                      <p className="text-[10px] text-slate-300 truncate">
+                        Tocca per aprire i 14 apparati biologici
+                      </p>
+                    </div>
+                    <span className="text-slate-400 text-xs shrink-0">▲</span>
+                  </div>
+                </div>
+
+                {/* Bottom App Dock */}
+                <div className="bg-white/5 rounded-2xl py-2 px-3 flex items-center justify-around">
+                  <span>📱</span>
+                  <span>💬</span>
+                  <span>📷</span>
+                  <span>⚙️</span>
+                </div>
+
+                {/* Interactive BottomSheet Simulation */}
+                {isSimulatorBottomSheetOpen && (
+                  <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-[2px] flex flex-col justify-end animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border-t border-slate-700 rounded-t-2xl p-3 shadow-2xl max-h-[82%] flex flex-col animate-in slide-in-from-bottom duration-300">
+                      <div className="w-9 h-1 bg-slate-600 rounded-full mx-auto mb-2" />
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                        <div>
+                          <p className="text-[10px] font-bold text-sky-400 tracking-wider">
+                            EZIOLOGIA BIOLOGICA
+                          </p>
+                          <p className="text-xs font-bold text-white">
+                            Seleziona un apparato
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setIsSimulatorBottomSheetOpen(false)}
+                          className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+
+                      <div className="overflow-y-auto divide-y divide-slate-800/60 py-1">
+                        {ETIOLOGY_CATEGORIES.map((cat) => (
+                          <div
+                            key={cat.id}
+                            onClick={() => {
+                              setIsSimulatorBottomSheetOpen(false);
+                              if (onSelectCategory) {
+                                onSelectCategory(cat.id);
+                              }
+                              onClose();
+                            }}
+                            className="py-2 px-1.5 flex items-center justify-between hover:bg-white/5 rounded-lg transition cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">{cat.emoji}</span>
+                              <div>
+                                <p className="text-xs font-semibold text-white">
+                                  {cat.label}
+                                </p>
+                                <p className="text-[9px] text-slate-400">{cat.desc}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-sky-400 font-semibold">
+                              Apri →
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Developer Note */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-start gap-3">
+                <Smartphone className="w-5 h-5 text-sky-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-slate-800 dark:text-slate-200 mb-0.5">
+                    Istruzioni e sorgenti per PWABuilder / Android Studio
+                  </p>
+                  <p>
+                    I codici sorgente nativi in Kotlin e i file XML per aggiungere questi widget nel tuo APK Android sono documentati nel file{' '}
+                    <code className="text-sky-600 dark:text-sky-400 font-semibold">README-WIDGETS-ANDROID.md</code>{' '}
+                    e disponibili nella cartella <code className="text-sky-600 dark:text-sky-400 font-semibold">/android-widgets/</code>.
+                  </p>
                 </div>
               </div>
             </div>

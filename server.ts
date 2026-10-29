@@ -1053,6 +1053,191 @@ app.get(['/img/:filename', '/api/telegram-image/:filename'], async (req, res) =>
 });
 
 // ============================================================================
+// 8. ANDROID HOME SCREEN WIDGET ENDPOINTS (TWA / AppWidgetProvider)
+// ============================================================================
+const TTL_WIDGET_NEWS_MS = 2 * 60 * 60 * 1000; // 2 hours cache as requested
+
+app.get('/api/widget/news', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader(
+    'Cache-Control',
+    'public, max-age=7200, s-maxage=7200, stale-while-revalidate=1800'
+  );
+
+  const feedType = (req.query.feed as string) || 'latest';
+  const limit = Math.min(parseInt((req.query.limit as string) || '15', 10), 30);
+  const cacheKey = `widget:news:${feedType}:${limit}`;
+  const cached = cacheStore.get(cacheKey);
+
+  if (cached && cached.isFresh) {
+    return sendCachedResponse(req, res, cached, 'HIT');
+  }
+
+  try {
+    if (feedType === 'today') {
+      let items: any[] = [];
+      const aoCache = cacheStore.get('accade-oggi-feed');
+      let xmlText = aoCache?.body;
+
+      if (!xmlText) {
+        try {
+          const aoRes = await fetch('https://telegram-feed.5lb-framework.workers.dev/feed.xml', {
+            headers: { 'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)' },
+          });
+          if (aoRes.ok) xmlText = await aoRes.text();
+        } catch {}
+      }
+
+      if (xmlText) {
+        const entryRegex = /<entry>([\s\S]*?)<\/entry>/gi;
+        let match;
+        while ((match = entryRegex.exec(xmlText)) !== null && items.length < limit) {
+          const block = match[1];
+          const id = (block.match(/<id>([\s\S]*?)<\/id>/i)?.[1] || '').trim();
+          const title = (block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim();
+          const published = (block.match(/<published>([\s\S]*?)<\/published>/i)?.[1] || block.match(/<updated>([\s\S]*?)<\/updated>/i)?.[1] || '').trim();
+          const cleanTitle = title.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+          if (cleanTitle) {
+            items.push({
+              id: id || `ao-${items.length}`,
+              title: cleanTitle.slice(0, 120),
+              date: published,
+              category: 'Accade oggi',
+              deepLink: 'https://magazine.5lb.eu/?filter=today',
+              url: 'https://magazine.5lb.eu/?filter=today',
+            });
+          }
+        }
+      }
+
+      const payload = JSON.stringify({
+        status: 'ok',
+        feed: 'today',
+        feedTitle: 'Accade oggi (Telegram)',
+        updatedAt: new Date().toISOString(),
+        count: items.length,
+        items,
+      });
+
+      const newEntry = cacheStore.set(cacheKey, {
+        body: payload,
+        contentType: 'application/json; charset=utf-8',
+        etag: computeETag(payload),
+        ttlMs: TTL_WIDGET_NEWS_MS,
+      });
+      return sendCachedResponse(req, res, newEntry, 'MISS');
+    }
+
+    // Default: 'latest' or 'archive' from Blogger feed
+    const targetUrl = `https://magazine.5lb.eu/feeds/posts/default?alt=json&max-results=${Math.max(limit + 5, 20)}`;
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': '5LB-Magazine-PWA/1.0 (+https://5lb.eu)',
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      if (cached) return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+      return res.status(response.status).json({ error: 'Errore feed Blogger' });
+    }
+
+    const data = await response.json();
+    const cutoff = Date.now() - 2 * 60 * 60 * 1000; // 2 hour publication delay
+    const entries = (data.feed?.entry || []).filter((entry: any) => {
+      const pubStr = entry.published?.$t;
+      if (!pubStr) return true;
+      const pubTime = new Date(pubStr).getTime();
+      return isNaN(pubTime) || pubTime <= cutoff;
+    });
+
+    const items = entries.slice(0, limit).map((entry: any) => {
+      const id = entry.id?.$t || '';
+      const title = entry.title?.$t || 'Senza titolo';
+      const published = entry.published?.$t || '';
+      let link = 'https://magazine.5lb.eu';
+      if (Array.isArray(entry.link)) {
+        const altLink = entry.link.find((l: any) => l.rel === 'alternate' && l.type === 'text/html');
+        if (altLink && altLink.href) link = altLink.href;
+      }
+      const categories = (entry.category || []).map((c: any) => c.term || '').filter(Boolean);
+      const cleanSummary = (entry.summary?.$t || entry.content?.$t || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 140);
+
+      return {
+        id,
+        title: title.trim(),
+        summary: cleanSummary,
+        date: published,
+        category: categories[0] || 'Notizie',
+        deepLink: `https://magazine.5lb.eu/?articleId=${encodeURIComponent(id)}`,
+        url: link,
+      };
+    });
+
+    const payload = JSON.stringify({
+      status: 'ok',
+      feed: feedType,
+      feedTitle: feedType === 'archive' ? 'Il mio archivio' : 'Ultime notizie',
+      updatedAt: new Date().toISOString(),
+      count: items.length,
+      items,
+    });
+
+    const newEntry = cacheStore.set(cacheKey, {
+      body: payload,
+      contentType: 'application/json; charset=utf-8',
+      etag: computeETag(payload),
+      ttlMs: TTL_WIDGET_NEWS_MS,
+    });
+    return sendCachedResponse(req, res, newEntry, 'MISS');
+  } catch (error: any) {
+    console.error('Error in /api/widget/news:', error);
+    if (cached) return sendCachedResponse(req, res, cached, 'STALE-FALLBACK');
+    return res.status(500).json({ error: error.message || 'Errore widget news' });
+  }
+});
+
+// 9. Categories endpoint for Eziologia widget / BottomSheet
+app.get('/api/widget/categories', (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader(
+    'Cache-Control',
+    'public, max-age=86400, s-maxage=86400, stale-while-revalidate=3600'
+  );
+
+  const categories = [
+    { id: 'ezio-respiratorie', label: 'Vie respiratorie', rssCategory: 'C: vie respiratorie', icon: '🫁', deepLink: 'https://magazine.5lb.eu/?category=ezio-respiratorie' },
+    { id: 'ezio-bocca', label: 'Cavità orale', rssCategory: 'C: bocca', icon: '👄', deepLink: 'https://magazine.5lb.eu/?category=ezio-bocca' },
+    { id: 'ezio-seno', label: 'Seno', rssCategory: 'C: seno', icon: '🩺', deepLink: 'https://magazine.5lb.eu/?category=ezio-seno' },
+    { id: 'ezio-gastro', label: 'App. gastro-intestinale', rssCategory: 'C: intestino', icon: '🍽️', deepLink: 'https://magazine.5lb.eu/?category=ezio-gastro' },
+    { id: 'ezio-cardio', label: 'App. cardio-circolatorio', rssCategory: 'C: sistema circolatorio', icon: '🫀', deepLink: 'https://magazine.5lb.eu/?category=ezio-cardio' },
+    { id: 'ezio-urinario', label: 'Apparato urinario', rssCategory: 'C: apparato urinario', icon: '💧', deepLink: 'https://magazine.5lb.eu/?category=ezio-urinario' },
+    { id: 'ezio-genitale', label: 'Apparato genitale', rssCategory: 'C: apparato genitale', icon: '🧬', deepLink: 'https://magazine.5lb.eu/?category=ezio-genitale' },
+    { id: 'ezio-muscolo', label: 'App. muscolo-scheletrico', rssCategory: 'C: apparato muscolo-scheletrico', icon: '🦴', deepLink: 'https://magazine.5lb.eu/?category=ezio-muscolo' },
+    { id: 'ezio-pelle', label: 'La pelle', rssCategory: 'C: pelle', icon: '🖐️', deepLink: 'https://magazine.5lb.eu/?category=ezio-pelle' },
+    { id: 'ezio-nervoso', label: 'Sistema nervoso', rssCategory: 'C: sistema nervoso', icon: '🧠', deepLink: 'https://magazine.5lb.eu/?category=ezio-nervoso' },
+    { id: 'ezio-sensi', label: 'Vista, udito, olfatto', rssCategory: 'C: sistema vis olf uditivo', icon: '👁️', deepLink: 'https://magazine.5lb.eu/?category=ezio-sensi' },
+    { id: 'ezio-allergie', label: 'Intolleranze e allergie', rssCategory: 'D: intolleranze', icon: '🌿', deepLink: 'https://magazine.5lb.eu/?category=ezio-allergie' },
+    { id: 'ezio-psicosi', label: 'Psicosi', rssCategory: 'COSTELLAZIONI', icon: '⚡', deepLink: 'https://magazine.5lb.eu/?category=ezio-psicosi' },
+    { id: 'ezio-lateralita', label: 'La lateralità', rssCategory: 'MANCINO', icon: '⚖️', deepLink: 'https://magazine.5lb.eu/?category=ezio-lateralita' },
+  ];
+
+  return res.status(200).json({
+    status: 'ok',
+    title: 'Eziologia 5LB',
+    total: categories.length,
+    categories,
+  });
+});
+
+// ============================================================================
 // SERVER INITIALIZATION
 // ============================================================================
 async function startServer() {

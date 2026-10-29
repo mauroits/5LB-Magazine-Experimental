@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/item_category_row"
+    android:layout_width="match_parent"
+    android:layout_height="52dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/item_category_ripple"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:layout_marginBottom="4dp"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Emoji o Icona Apparato -->
+    <TextView
+        android:id="@+id/txt_category_emoji"
+        android:layout_width="32dp"
+        android:layout_height="wrap_content"
+        android:text="🫁"
+        android:textSize="20sp"
+        android:gravity="center"
+        android:layout_marginEnd="12dp" />
+
+    <!-- Nome Apparato e Descrizione -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/txt_category_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Vie respiratorie"
+            android:textColor="#f8fafc"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/txt_category_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Articoli biologici correlati"
+            android:textColor="#94a3b8"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Freccia destra -->
+    <ImageView
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:src="@drawable/ic_chevron_right"
+        android:tint="#64748b"
+        android:contentDescription="Apri" />
+
+</LinearLayout>

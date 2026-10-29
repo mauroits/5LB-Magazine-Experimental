@@ -22,7 +22,8 @@ import {
   Cookie,
   Users,
   Archive,
-  X
+  X,
+  Smartphone
 } from 'lucide-react';
 import { NavItem, NavSection, ActiveFilter } from '../types';
 import {
@@ -183,6 +184,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return <IconAndrogyne className="w-5 h-5" />;
       case 'custom-covid19':
         return <IconCovid19 className="w-5 h-5" />;
+      // Categorie Eziologia con icone biologiche distintive
+      case 'ezio-respiratorie':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Vie respiratorie">🫁</span>;
+      case 'ezio-bocca':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Cavità orale">👄</span>;
+      case 'ezio-seno':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Seno">🩺</span>;
+      case 'ezio-gastro':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Apparato gastro-intestinale">🍽️</span>;
+      case 'ezio-cardio':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Apparato cardio-circolatorio">🫀</span>;
+      case 'ezio-urinario':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Apparato urinario">💧</span>;
+      case 'ezio-genitale':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Apparato genitale">🧬</span>;
+      case 'ezio-muscolo':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Apparato muscolo-scheletrico">🦴</span>;
+      case 'ezio-pelle':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="La pelle">🖐️</span>;
+      case 'ezio-nervoso':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Sistema nervoso">🧠</span>;
+      case 'ezio-sensi':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Vista, udito, olfatto">👁️</span>;
+      case 'ezio-allergie':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Intolleranze e allergie">🌿</span>;
+      case 'ezio-psicosi':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="Psicosi">⚡</span>;
+      case 'ezio-lateralita':
+        return <span className="text-lg leading-none select-none" role="img" aria-label="La lateralità">⚖️</span>;
       default:
         return <Bookmark className="w-5 h-5 text-slate-800 dark:text-slate-200" />;
     }

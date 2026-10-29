@@ -173,6 +173,7 @@ export default function App() {
   const [isCookieManageMode, setIsCookieManageMode] = useState(false);
   const [isBadgesModalOpen, setIsBadgesModalOpen] = useState(false);
   const [celebrationBadge, setCelebrationBadge] = useState<BadgeTier | null>(null);
+  const [infoDefaultTab, setInfoDefaultTab] = useState<'funzioni' | 'aggiornamenti' | 'contatti' | 'privacy' | 'widget'>('funzioni');
 
   // Link interception popup state for magazine.5lb.eu links
   const [promptArticleUrl, setPromptArticleUrl] = useState<string | null>(null);
@@ -360,6 +361,94 @@ export default function App() {
 
     // Traccia la visualizzazione iniziale di pagina
     trackPageView(window.location.pathname || '/', '5LB Magazine');
+
+    // Gestione parametri query da scorciatoie PWA / launcher / widget Android
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabParam = urlParams.get('tab');
+      const actionParam = urlParams.get('action');
+      const filterParam = urlParams.get('filter');
+      const categoryParam = urlParams.get('category');
+      const articleIdParam = urlParams.get('articleId') || urlParams.get('id');
+      const articleUrlParam = urlParams.get('articleUrl') || urlParams.get('url');
+      const widgetsParam = urlParams.get('widgets') || urlParams.get('openWidgets');
+
+      if (widgetsParam) {
+        setInfoDefaultTab('widget');
+        setIsInfoOpen(true);
+      }
+
+      if (categoryParam) {
+        const catQuery = categoryParam.trim().toLowerCase();
+        const ezioSection = NAV_SECTIONS.find((s) => s.id === 'eziologia');
+        const found = ezioSection?.items.find(
+          (it) =>
+            it.id.toLowerCase() === catQuery ||
+            it.rssCategory?.toLowerCase() === catQuery ||
+            it.label.toLowerCase() === catQuery
+        );
+        if (found && found.rssCategory) {
+          setActiveFilter({ type: 'rss', category: found.rssCategory, label: found.label });
+        }
+      } else if (filterParam) {
+        const fp = filterParam.toLowerCase().trim();
+        if (fp === 'non-letto' || fp === 'unread') {
+          setActiveFilter({ type: 'quick', id: 'unread' });
+        } else if (fp === 'today' || fp === 'accade-oggi' || fp === 'social') {
+          setActiveFilter({ type: 'quick', id: 'today' });
+        } else if (fp === 'salvati' || fp === 'favorites' || fp === 'ti-piace') {
+          setActiveFilter({ type: 'quick', id: 'favorites' });
+        } else if (fp === 'all' || fp === 'archive' || fp === 'archivio' || fp === 'latest') {
+          setActiveFilter({ type: 'quick', id: 'all' });
+        }
+      } else if (tabParam === 'archive' || tabParam === 'latest') {
+        setActiveFilter({ type: 'quick', id: 'all' });
+      } else if (tabParam === 'today' || tabParam === 'accade-oggi') {
+        setActiveFilter({ type: 'quick', id: 'today' });
+      }
+
+      if (actionParam === 'search') {
+        setActiveFilter({ type: 'quick', id: 'all' });
+      }
+
+      if (articleIdParam || articleUrlParam) {
+        const targetId = articleIdParam ? decodeURIComponent(articleIdParam) : null;
+        const targetUrl = articleUrlParam ? decodeURIComponent(articleUrlParam) : null;
+
+        const checkAndOpen = (list: BloggerPost[]) => {
+          const match = list.find((p) => (targetId && p.id === targetId) || (targetUrl && p.link === targetUrl));
+          if (match) {
+            handleSelectPost(match, false);
+            return true;
+          }
+          return false;
+        };
+
+        if (!checkAndOpen(posts)) {
+          if (targetUrl) {
+            fetchPostByUrl(targetUrl).then((fetched) => {
+              if (fetched) handleSelectPost(fetched, false);
+            }).catch(() => {});
+          }
+        }
+      }
+
+      if (
+        tabParam ||
+        actionParam ||
+        filterParam ||
+        categoryParam ||
+        articleIdParam ||
+        articleUrlParam ||
+        widgetsParam ||
+        urlParams.has('launch_pwa')
+      ) {
+        const cleanUrl = window.location.pathname + (window.location.hash || '');
+        window.history.replaceState(null, '', cleanUrl);
+      }
+    } catch {
+      // Ignora errori di parsing parametri URL
+    }
 
     // Mostra il banner del consenso prima dell'uso se l'utente non ha ancora espresso una scelta
     const savedConsent = getStoredCookieConsent();
@@ -1538,7 +1627,10 @@ export default function App() {
 
       <InfoModal
         isOpen={isInfoOpen}
-        onClose={() => setIsInfoOpen(false)}
+        onClose={() => {
+          setIsInfoOpen(false);
+          setInfoDefaultTab('funzioni');
+        }}
         onRefreshFeed={() => {
           loadAccadeOggiFeed(true);
           loadFeed(true);
@@ -1548,6 +1640,16 @@ export default function App() {
           setIsCookieManageMode(true);
           setIsCookieModalOpen(true);
         }}
+        posts={posts}
+        onSelectPost={(post) => handleSelectPost(post)}
+        onSelectCategory={(categoryId) => {
+          const ezioSection = sections.find((s) => s.id === 'eziologia');
+          const foundItem = ezioSection?.items.find((it) => it.id === categoryId);
+          if (foundItem && foundItem.rssCategory) {
+            setActiveFilter({ type: 'rss', category: foundItem.rssCategory, label: foundItem.label });
+          }
+        }}
+        defaultTab={infoDefaultTab}
       />
 
       <NotificationCenterModal
@@ -1581,8 +1683,6 @@ export default function App() {
           setIsBadgesModalOpen(true);
         }}
       />
-
-
 
       {/* PWA Offline indicator */}
       <OfflineIndicator />
